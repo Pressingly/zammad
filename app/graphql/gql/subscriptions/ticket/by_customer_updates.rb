@@ -11,6 +11,9 @@ module Gql::Subscriptions
     requires_permission 'ticket.agent'
 
     def update(customer:)
+      group_ids = ::Ticket.where(customer_id: customer.id).distinct.pluck(:group_id)
+      return no_update if group_ids.present? && group_ids.none? { |gid| context.current_user.group_access?(gid, 'read') }
+
       { list_changed: true }
     end
   end
