@@ -116,7 +116,7 @@ RSpec.describe Gql::Subscriptions::Ticket::ByOrganizationUpdates, performs_jobs:
         expect(gql.result.data).to eq({ 'listChanged' => nil })
       end
 
-      it 'receives updates (best-effort: cannot filter per-ticket group)' do
+      it 'receives updates when at least one ticket is in an accessible group' do
         mock_channel.mock_broadcasted_messages.clear
 
         create(:ticket, customer: filter_customer, organization: organization, group: group_a)
