@@ -116,7 +116,7 @@ RSpec.describe Zammad::MpassProxyAuth do
     end
 
     context 'when user is inactive' do
-      let(:user) { create(:agent, login: 'inactive@arbisoft.com', email: 'inactive@arbisoft.com', active: false) }
+      let!(:user) { create(:agent, login: 'inactive@arbisoft.com', email: 'inactive@arbisoft.com', active: false) }
 
       before { env['HTTP_X_AUTH_REQUEST_EMAIL'] = 'inactive@arbisoft.com' }
 

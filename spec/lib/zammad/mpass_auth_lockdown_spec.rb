@@ -55,7 +55,7 @@ RSpec.describe Zammad::MpassAuthLockdown do
 
       it 'raises Forbidden' do
         expect do
-          described_class.with_current_user(user).execute(
+          Service::User::ChangePassword.with_current_user(user).execute(
             current_password: 'password',
             new_password:     'Test1234!new',
           )
@@ -73,7 +73,7 @@ RSpec.describe Zammad::MpassAuthLockdown do
 
       it 'allows password change' do
         expect do
-          described_class.with_current_user(user).execute(
+          Service::User::ChangePassword.with_current_user(user).execute(
             current_password: 'password',
             new_password:     'ITest1234!changed',
           )
