@@ -39,6 +39,32 @@ UUID, not a usable identity (see Penpot regression test `3a7adafc5`).
   identity, the session is silently re-keyed to the new user (follows
   the Penpot/Plane pattern).
 
+## Local auth lockdown
+
+When `MPASS_PROXY_AUTH_ENABLED` is set, the initializer forces these
+Settings on every boot:
+
+| Setting | Value | Effect |
+|---------|-------|--------|
+| `user_show_password_login` | `false` | Hides password form on login page, hides password change in profile |
+| `user_lost_password` | `false` | Disables "Forgot password?" link and backend reset endpoints |
+| `user_create_account` | `false` | Disables self-registration (not in the original plan, added defensively to prevent local signup bypassing SSO) |
+
+Settings are only forced when their rows exist in the database (safe during
+`db:migrate` before seeds run).
+
+Additionally:
+- **Email is immutable** — a `validate` callback on User rejects email
+  changes for all users except system (user_id=1). This surfaces as a
+  proper validation error (422), not a 500. This prevents users from
+  changing their SSO lookup key.
+- **Password change rejected** — `Service::User::ChangePassword` is
+  prepended with a guard that returns 403 when SSO is active. This
+  removes the upstream admin escape hatch (`admin.*` permission bypass
+  in `useCheckChangePassword`). Recovery for the bootstrap admin
+  requires `rails c` in the container. This is intentional: with mPass
+  as the sole identity source, no local password path should exist.
+
 ## Security controls
 
 - **`DEFAULT_EMAIL_DOMAIN` fails closed**: unlike Outline/Plane/Penpot
@@ -59,7 +85,8 @@ UUID, not a usable identity (see Penpot regression test `3a7adafc5`).
 | File | Purpose |
 |------|---------|
 | `lib/zammad/mpass_proxy_auth.rb` | The Rack middleware |
-| `config/initializers/mpass_proxy_auth.rb` | Wires the middleware into the Rails stack when `MPASS_PROXY_AUTH_ENABLED` is set |
+| `lib/zammad/mpass_auth_lockdown.rb` | Email immutability + password change guard |
+| `config/initializers/mpass_proxy_auth.rb` | Wires middleware, lockdown modules, and forces Settings on boot |
 | `doc/mpass_sso.md` | This file |
 
 ## Important: disable `auth_sso` Setting
@@ -90,3 +117,13 @@ the upstream SSO flow.
   `Setting.get('maintenance_mode')` and returns 403 for non-admin
   users, matching the controller-level `authentication_check_prerequesits`
   behavior.
+- **Module patching uses `to_prepare`** — the `User.include` and
+  `Service::User::ChangePassword.prepend` calls run inside
+  `config.to_prepare` so the patches survive class reloading in
+  development mode. Settings are forced in `after_initialize` (once
+  per boot) with an `exists?` guard to handle pre-seed state.
+- **No local password recovery** — the `RejectPasswordChange` prepend
+  blocks all callers including admins. With mPass as the sole identity
+  source, password-based recovery is replaced by Cognito-level recovery.
+  If the bootstrap admin needs emergency access, use `rails c` in the
+  container.
