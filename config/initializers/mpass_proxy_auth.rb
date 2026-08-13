@@ -1,6 +1,6 @@
 # Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
-if ENV['MPASS_PROXY_AUTH_ENABLED'].present? # rubocop:disable Rails/EnvironmentVariableAccess
+if ENV['AUTH_TYPE'] == 'SSO' # rubocop:disable Rails/EnvironmentVariableAccess
   require 'zammad/mpass_proxy_auth'
   require 'zammad/mpass_auth_lockdown'
 

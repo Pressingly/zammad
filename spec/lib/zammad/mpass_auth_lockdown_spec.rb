@@ -5,7 +5,7 @@ require 'rails_helper'
 RSpec.describe Zammad::MpassAuthLockdown do
   before do
     allow(ENV).to receive(:[]).and_call_original
-    allow(ENV).to receive(:[]).with('MPASS_PROXY_AUTH_ENABLED').and_return('true')
+    allow(ENV).to receive(:[]).with('AUTH_TYPE').and_return('SSO')
   end
 
   describe Zammad::MpassAuthLockdown::UserEmailImmutable do
@@ -33,7 +33,7 @@ RSpec.describe Zammad::MpassAuthLockdown do
 
     context 'when SSO is not active' do
       before do
-        allow(ENV).to receive(:[]).with('MPASS_PROXY_AUTH_ENABLED').and_return(nil)
+        allow(ENV).to receive(:[]).with('AUTH_TYPE').and_return(nil)
       end
 
       let(:user) { create(:agent, email: 'original@example.com') }
@@ -65,7 +65,7 @@ RSpec.describe Zammad::MpassAuthLockdown do
 
     context 'when SSO is not active' do
       before do
-        allow(ENV).to receive(:[]).with('MPASS_PROXY_AUTH_ENABLED').and_return(nil)
+        allow(ENV).to receive(:[]).with('AUTH_TYPE').and_return(nil)
         Setting.set('user_show_password_login', true)
       end
 

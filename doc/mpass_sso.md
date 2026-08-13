@@ -21,7 +21,7 @@ UUID, not a usable identity (see Penpot regression test `3a7adafc5`).
 
 | Env var | Required | Description |
 |---------|----------|-------------|
-| `MPASS_PROXY_AUTH_ENABLED` | Yes | Set to any non-empty value to activate the middleware |
+| `AUTH_TYPE` | Yes | Set to `SSO` to activate the middleware. Matches the convention used by Outline, Plane, Penpot, and Twenty in the FOSS bundle. Passed via docker-compose `environment:` block |
 | `DEFAULT_EMAIL_DOMAIN` | Yes | Domain appended to bare usernames. **Fails closed** when unset — bare usernames are rejected. Cognito's `cognito:username` claim often lacks `@`, making this the primary code path |
 | `SMB_CORPORATE_ID` | No | When set, enforces corporate-ID check against the JWT `custom:corporate_id` claim in `X-Auth-Request-Access-Token`. Requests without a matching corporate ID get 403 |
 
@@ -41,8 +41,8 @@ UUID, not a usable identity (see Penpot regression test `3a7adafc5`).
 
 ## Local auth lockdown
 
-When `MPASS_PROXY_AUTH_ENABLED` is set, the initializer forces these
-Settings on every boot:
+When `AUTH_TYPE=SSO`, the initializer forces these Settings on every
+boot:
 
 | Setting | Value | Effect |
 |---------|-------|--------|

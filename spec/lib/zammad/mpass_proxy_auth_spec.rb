@@ -17,7 +17,7 @@ RSpec.describe Zammad::MpassProxyAuth do
     allow(ENV).to receive(:[]).and_call_original
     allow(ENV).to receive(:[]).with('DEFAULT_EMAIL_DOMAIN').and_return('arbisoft.com')
     allow(ENV).to receive(:[]).with('SMB_CORPORATE_ID').and_return(nil)
-    allow(ENV).to receive(:[]).with('MPASS_PROXY_AUTH_ENABLED').and_return('true')
+    allow(ENV).to receive(:[]).with('AUTH_TYPE').and_return('SSO')
   end
 
   describe '#call' do

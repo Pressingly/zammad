@@ -12,7 +12,7 @@ module Zammad
       private
 
       def prevent_email_change_under_sso
-        return unless ENV['MPASS_PROXY_AUTH_ENABLED'].present? # rubocop:disable Rails/EnvironmentVariableAccess
+        return unless ENV['AUTH_TYPE'] == 'SSO' # rubocop:disable Rails/EnvironmentVariableAccess
         return unless email_changed?
         return if UserInfo.current_user_id == 1
 
@@ -22,7 +22,7 @@ module Zammad
 
     module RejectPasswordChange
       def execute
-        if ENV['MPASS_PROXY_AUTH_ENABLED'].present? # rubocop:disable Rails/EnvironmentVariableAccess
+        if ENV['AUTH_TYPE'] == 'SSO' # rubocop:disable Rails/EnvironmentVariableAccess
           raise Exceptions::Forbidden, __('Password management is disabled when SSO is active.')
         end
 
