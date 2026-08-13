@@ -88,6 +88,8 @@ Additionally:
 | `lib/zammad/mpass_auth_lockdown.rb` | Email immutability + password change guard |
 | `config/initializers/mpass_proxy_auth.rb` | Wires middleware, lockdown modules, and forces Settings on boot |
 | `doc/mpass_sso.md` | This file |
+| `spec/lib/zammad/mpass_proxy_auth_spec.rb` | RSpec tests for the Rack middleware |
+| `spec/lib/zammad/mpass_auth_lockdown_spec.rb` | RSpec tests for auth lockdown modules |
 
 ## Important: disable `auth_sso` Setting
 
