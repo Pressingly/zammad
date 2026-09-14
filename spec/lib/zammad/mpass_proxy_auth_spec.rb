@@ -127,7 +127,7 @@ RSpec.describe Zammad::MpassProxyAuth do
       end
     end
 
-    context 'with an email outside the synthetic domain' do
+    context 'regardless of DEFAULT_EMAIL_DOMAIN' do
       before do
         env['HTTP_X_AUTH_REQUEST_EMAIL'] = 'external@gmail.com'
       end
@@ -150,6 +150,10 @@ RSpec.describe Zammad::MpassProxyAuth do
         expect(customer.role?('Agent')).to be(false)
 
         middleware.call(env)
+
+        # Anchor the non-transition: without this the example would still pass
+        # if the middleware started rejecting the request outright.
+        expect(session[:user_id]).to eq(customer.id)
 
         customer.reload
         expect(customer.role?('Agent')).to be(false)
