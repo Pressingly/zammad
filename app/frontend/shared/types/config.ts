@@ -49,6 +49,8 @@ export interface ConfigList {
   maintenance_login: boolean
   maintenance_login_message: string
   maintenance_mode: boolean
+  mpass_logout_redirect_url: string
+  mpass_sso_active: boolean
   organization: string
   password_max_login_failed?:
     | 4

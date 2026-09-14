@@ -68,16 +68,23 @@ const route: RouteRecordRaw[] = [
     name: 'Logout',
     component: {
       async beforeRouteEnter() {
-        const [{ useAuthenticationStore }, { useNotifications }] = await Promise.all([
-          import('#shared/stores/authentication.ts'),
-          import('#shared/components/CommonNotifications/useNotifications.ts'),
-        ])
+        const [{ useAuthenticationStore }, { useNotifications }, { handleMpassLogout }] =
+          await Promise.all([
+            import('#shared/stores/authentication.ts'),
+            import('#shared/components/CommonNotifications/useNotifications.ts'),
+            import('#shared/utils/mpassLogout.ts'),
+          ])
 
         const { clearAllNotifications } = useNotifications()
 
         const authentication = useAuthenticationStore()
 
         clearAllNotifications()
+
+        // Under platform SSO the per-app sign out only navigates back to the portal and
+        // must not clear the local session.
+        if (handleMpassLogout()) return false
+
         await authentication.logout()
 
         if (authentication.externalLogout) return false

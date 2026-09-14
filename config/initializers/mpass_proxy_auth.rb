@@ -1,5 +1,13 @@
 # Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
+# Zammad::MpassLogout is autoloaded from lib (config.autoload_lib), no require needed.
+# Deliberately outside of the AUTH_TYPE guard: the settings must also be synced
+# (back to "off") when a deployment stops using SSO, otherwise a stale portal
+# URL would keep hijacking the sign out control.
+Rails.application.config.after_initialize do
+  Zammad::MpassLogout.sync_settings!
+end
+
 if ENV['AUTH_TYPE'] == 'SSO' # rubocop:disable Rails/EnvironmentVariableAccess
   require 'zammad/mpass_proxy_auth'
   require 'zammad/mpass_auth_lockdown'

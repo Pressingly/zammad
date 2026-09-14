@@ -24,6 +24,7 @@ UUID, not a usable identity (see Penpot regression test `3a7adafc5`).
 | `AUTH_TYPE` | Yes | Set to `SSO` to activate the middleware. Matches the convention used by Outline, Plane, Penpot, and Twenty in the FOSS bundle. Passed via docker-compose `environment:` block |
 | `DEFAULT_EMAIL_DOMAIN` | Yes | Domain appended to bare usernames. **Fails closed** when unset — bare usernames are rejected. Cognito's `cognito:username` claim often lacks `@`, making this the primary code path |
 | `SMB_CORPORATE_ID` | No | When set, enforces corporate-ID check against the JWT `custom:corporate_id` claim in `X-Auth-Request-Access-Token`. Requests without a matching corporate ID get 403 |
+| `LOGOUT_REDIRECT_URL` | Yes (under SSO) | Platform portal URL that the per-app "Sign out" control navigates to, e.g. `https://foss.arbisoft.com`. Read at boot and mirrored into the frontend Settings. Must be an absolute `http(s)` URL; anything else is logged and ignored |
 
 ## User provisioning (JIT)
 
@@ -82,6 +83,64 @@ Additionally:
   requires `rails c` in the container. This is intentional: with mPass
   as the sole identity source, no local password path should exist.
 
+## Logout
+
+Per-app "Sign out" is **navigation only** under SSO. It top-level navigates the
+browser to the platform portal and does **not** call any session-clearing
+endpoint — not Zammad's `DELETE /api/v1/signout`, not the `logout` GraphQL
+mutation, not `/oauth2/sign_out`, not Cognito. This follows the platform-wide
+logout rule; the only flow that actually ends a session is the portal's
+"Logout all".
+
+This is not just a rule, it is also the only thing that works. Both signout
+paths (`SessionsController#destroy` and `Gql::Mutations::Logout#resolve`) call
+`reset_session`, but the very next request still carries
+`X-Auth-Request-Email`, so `Zammad::MpassProxyAuth` immediately re-establishes
+the session and the user lands back on the dashboard. Stock logout under SSO is
+a no-op with extra steps.
+
+The portal URL is **not** derived from the request host and **not** baked in at
+build time (Zammad's assets are precompiled into the image, so a build-time
+value would pin one image to one client). Instead `Zammad::MpassLogout` reads
+`LOGOUT_REDIRECT_URL` at boot and mirrors it into two `frontend: true` Settings,
+which both frontend stacks already consume (`App.Config` in CoffeeScript,
+`useApplicationStore().config` in Vue):
+
+| Setting | Type | Value |
+|---------|------|-------|
+| `mpass_sso_active` | boolean | `AUTH_TYPE == 'SSO'` |
+| `mpass_logout_redirect_url` | string | validated `LOGOUT_REDIRECT_URL`, or `''` |
+
+Both rows are created with `create_if_not_exists` and only written when the
+value actually changes, so the sync is idempotent and safe before seeds have
+run. The sync runs **outside** the `AUTH_TYPE` guard: a deployment that stops
+using SSO gets the stored URL cleared instead of keeping a stale redirect.
+
+Frontend behaviour, in all three UIs:
+
+| `mpass_sso_active` | `mpass_logout_redirect_url` | Behaviour |
+|--------------------|-----------------------------|-----------|
+| `false` | (ignored) | Stock Zammad logout — non-SSO deployments are untouched |
+| `true` | absolute URL | `window.location.href = <portal>`, no session call |
+| `true` | empty / invalid | Logs an error and does nothing — never a session call, never a guessed host |
+
+Entry points patched (all reachable from the same image, so all are covered):
+
+| Stack | File | Covers |
+|-------|------|--------|
+| CoffeeScript | `app/assets/javascripts/app/controllers/logout.coffee` | `#logout` route, the avatar menu "Sign out" item and the keyboard shortcut, which all resolve to this route |
+| Vue desktop | `app/frontend/apps/desktop/pages/authentication/routes.ts` | `/logout` route guard |
+| Vue mobile | `app/frontend/apps/mobile/pages/authentication/routes.ts` | `/logout` route guard |
+
+Only the user-initiated entry points are patched. Involuntary session ends
+(`session_invalid`, `after_auth_modal`, switch-back-to-user,
+`useAuthenticationUpdates`) keep stock behaviour — they are not a user pressing
+"Sign out" and must not bounce anyone to the portal.
+
+> Per-app "Sign out" is **not a security boundary**: the shared `_oauth2_proxy`
+> cookie and the Cognito session survive it. Users who really need to end their
+> session must use the portal's "Logout all".
+
 ## Security controls
 
 - **`DEFAULT_EMAIL_DOMAIN` fails closed**: unlike Outline/Plane/Penpot
@@ -103,10 +162,12 @@ Additionally:
 |------|---------|
 | `lib/zammad/mpass_proxy_auth.rb` | The Rack middleware |
 | `lib/zammad/mpass_auth_lockdown.rb` | Email immutability + password change guard |
+| `lib/zammad/mpass_logout.rb` | Env → Setting plumbing for the portal logout redirect |
 | `config/initializers/mpass_proxy_auth.rb` | Wires middleware, lockdown modules, and forces Settings on boot |
 | `doc/mpass_sso.md` | This file |
 | `spec/lib/zammad/mpass_proxy_auth_spec.rb` | RSpec tests for the Rack middleware |
 | `spec/lib/zammad/mpass_auth_lockdown_spec.rb` | RSpec tests for auth lockdown modules |
+| `spec/lib/zammad/mpass_logout_spec.rb` | RSpec tests for the logout redirect plumbing |
 
 ## Important: disable `auth_sso` Setting
 
