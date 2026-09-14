@@ -1,0 +1,1 @@
+{"nodes": [{"id": "users_usama_sadiq_desktop_foss_moneta_zammad_spec_rubocop_cop_zammad_migration_ensure_integer_primary_key_spec_rb", "label": "migration_ensure_integer_primary_key_spec.rb", "file_type": "code", "source_file": "spec/rubocop/cop/zammad/migration_ensure_integer_primary_key_spec.rb", "source_location": "L1"}], "edges": [], "raw_calls": []}

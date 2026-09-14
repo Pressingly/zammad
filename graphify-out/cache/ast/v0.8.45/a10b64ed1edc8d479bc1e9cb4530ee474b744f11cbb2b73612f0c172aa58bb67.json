@@ -1,0 +1,1 @@
+{"nodes": [{"id": "users_usama_sadiq_desktop_foss_moneta_zammad_spec_db_migrate_20250827060616_checklist_tables_wrong_column_type_spec_rb", "label": "20250827060616_checklist_tables_wrong_column_type_spec.rb", "file_type": "code", "source_file": "spec/db/migrate/20250827060616_checklist_tables_wrong_column_type_spec.rb", "source_location": "L1"}], "edges": [], "raw_calls": []}

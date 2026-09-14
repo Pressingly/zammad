@@ -32,12 +32,25 @@ module Zammad
 
         create_settings_if_missing
 
-        assign(SSO_SETTING_NAME, sso?)
-        assign(REDIRECT_SETTING_NAME, configured_url)
+        # Each assign is isolated. Sharing one rescue would let a failure on the
+        # first setting skip the second, and both half-states are worse than the
+        # bug this fixes: sso_active=false silently restores stock logout (which
+        # MpassProxyAuth immediately undoes), and sso_active=true with a blank
+        # URL makes Sign out do nothing at all.
+        ok_sso      = assign(SSO_SETTING_NAME, sso?)
+        ok_redirect = assign(REDIRECT_SETTING_NAME, configured_url)
 
+        ok_sso && ok_redirect
+      end
+
+      # @return [Boolean] true when the setting holds the wanted value afterwards.
+      def assign(name, value)
+        return true if Setting.get(name) == value
+
+        Setting.set(name, value)
         true
       rescue ActiveRecord::ActiveRecordError => e
-        Rails.logger.error("mpass_logout: could not sync settings: #{e.message}")
+        Rails.logger.error("mpass_logout: could not set #{name}: #{e.message}")
         false
       end
 
@@ -74,21 +87,21 @@ module Zammad
         false
       end
 
-      def assign(name, value)
-        return if Setting.get(name) == value
-
-        Setting.set(name, value)
-      end
-
       def settings_table_available?
         ActiveRecord::Base.connection_pool.with_connection { |connection| connection.table_exists?('settings') }
       rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::NoDatabaseError, ActiveRecord::StatementInvalid
         false
       end
 
+      # Each create is independently rescued: the check-then-act in
+      # Setting.exists? -> create_if_not_exists can lose a race (RecordNotUnique),
+      # and a failure on one setting must not prevent the other from existing.
       def create_settings_if_missing
-        create_sso_setting
-        create_redirect_setting
+        %i[create_sso_setting create_redirect_setting].each do |creator|
+          send(creator)
+        rescue ActiveRecord::ActiveRecordError => e
+          Rails.logger.error("mpass_logout: could not create setting via #{creator}: #{e.message}")
+        end
       end
 
       def create_sso_setting

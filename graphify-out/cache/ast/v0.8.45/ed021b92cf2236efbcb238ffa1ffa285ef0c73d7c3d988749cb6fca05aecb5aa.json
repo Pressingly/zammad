@@ -1,0 +1,1 @@
+{"nodes": [{"id": "users_usama_sadiq_desktop_foss_moneta_zammad_spec_db_migrate_signature_convert_images_to_cid_spec_rb", "label": "signature_convert_images_to_cid_spec.rb", "file_type": "code", "source_file": "spec/db/migrate/signature_convert_images_to_cid_spec.rb", "source_location": "L1"}], "edges": [], "raw_calls": []}

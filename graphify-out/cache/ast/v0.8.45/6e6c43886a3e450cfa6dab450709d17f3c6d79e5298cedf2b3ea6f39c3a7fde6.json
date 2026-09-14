@@ -1,0 +1,1 @@
+{"nodes": [{"id": "users_usama_sadiq_desktop_foss_moneta_zammad_spec_graphql_gql_shared_examples_fails_if_unauthenticated_rb", "label": "fails_if_unauthenticated.rb", "file_type": "code", "source_file": "spec/graphql/gql/shared_examples/fails_if_unauthenticated.rb", "source_location": "L1"}], "edges": [], "raw_calls": []}

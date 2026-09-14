@@ -1,0 +1,1 @@
+{"nodes": [{"id": "users_usama_sadiq_desktop_foss_moneta_zammad_spec_db_migrate_ensure_no_commas_and_asterisks_in_tag_names_spec_rb", "label": "ensure_no_commas_and_asterisks_in_tag_names_spec.rb", "file_type": "code", "source_file": "spec/db/migrate/ensure_no_commas_and_asterisks_in_tag_names_spec.rb", "source_location": "L1"}], "edges": [], "raw_calls": []}

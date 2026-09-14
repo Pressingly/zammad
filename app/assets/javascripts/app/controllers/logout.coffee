@@ -11,7 +11,15 @@ class Logout
       if !redirectUrl
         App.Log.error('Auth', 'platform SSO is active but no logout redirect URL is configured, staying put')
         return
-      window.location.href = redirectUrl
+      # Re-check the scheme here too: the setting is validated on the way in from
+      # the environment, but any admin can overwrite it via the settings API, and
+      # a javascript: URL would execute for every agent who clicks Sign out.
+      if !/^https?:\/\//i.test(redirectUrl)
+        App.Log.error('Auth', 'logout redirect URL is not an absolute http(s) URL, staying put')
+        return
+      # replace(), not href: the Backbone router has already committed #logout to
+      # history, so href would leave Back bouncing the user straight out again.
+      window.location.replace(redirectUrl)
       return
 
     App.Auth.logout()

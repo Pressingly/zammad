@@ -1,0 +1,1 @@
+{"nodes": [{"id": "users_usama_sadiq_desktop_foss_moneta_zammad_spec_db_migrate_move_checklist_ticket_relation_to_ticket_spec_rb", "label": "move_checklist_ticket_relation_to_ticket_spec.rb", "file_type": "code", "source_file": "spec/db/migrate/move_checklist_ticket_relation_to_ticket_spec.rb", "source_location": "L1"}], "edges": [], "raw_calls": []}

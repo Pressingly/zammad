@@ -30,6 +30,15 @@ export const handleMpassLogout = (): boolean => {
     return true
   }
 
+  // Re-check the scheme on the read path. The value is validated when it is
+  // synced from the environment, but any admin can overwrite the setting through
+  // PUT /api/v1/settings/:id, and `location.href = 'javascript:...'` still
+  // executes for every agent who then clicks Sign out.
+  if (!/^https?:\/\//i.test(redirectUrl)) {
+    log.error('Logout redirect URL is not an absolute http(s) URL, refusing to navigate.')
+    return true
+  }
+
   window.location.href = redirectUrl
 
   return true

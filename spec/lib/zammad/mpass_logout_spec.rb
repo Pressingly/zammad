@@ -61,6 +61,28 @@ RSpec.describe Zammad::MpassLogout do
     end
   end
 
+  describe '.sync_settings! resilience' do
+    it 'still syncs the redirect setting when the SSO setting write fails' do
+      allow(Setting).to receive(:set).and_call_original
+      allow(Setting).to receive(:set)
+        .with(described_class::SSO_SETTING_NAME, anything)
+        .and_raise(ActiveRecord::RecordInvalid)
+
+      expect(described_class.sync_settings!).to be(false)
+      expect(Setting.get(described_class::REDIRECT_SETTING_NAME)).to eq(portal_url)
+    end
+
+    it 'still syncs the SSO setting when the redirect write fails' do
+      allow(Setting).to receive(:set).and_call_original
+      allow(Setting).to receive(:set)
+        .with(described_class::REDIRECT_SETTING_NAME, anything)
+        .and_raise(ActiveRecord::RecordInvalid)
+
+      expect(described_class.sync_settings!).to be(false)
+      expect(Setting.get(described_class::SSO_SETTING_NAME)).to be(true)
+    end
+  end
+
   describe '.sync_settings!' do
     it 'creates both settings and stores the portal URL' do
       expect(described_class.sync_settings!).to be(true)
