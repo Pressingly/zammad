@@ -41,11 +41,12 @@ RSpec.describe Zammad::MpassProxyAuth do
         expect(session[:authentication_type]).to eq('SSO')
       end
 
-      it 'assigns Agent role to corporate email users' do
+      it 'assigns the signup role, never Agent, regardless of email domain' do
         middleware.call(env)
 
         user = User.find_by(login: 'test.user@arbisoft.com')
-        expect(user.role?('Agent')).to be(true)
+        expect(user.role?('Agent')).to be(false)
+        expect(user.role?('Customer')).to be(true)
       end
     end
 
@@ -126,7 +127,7 @@ RSpec.describe Zammad::MpassProxyAuth do
       end
     end
 
-    context 'with non-corporate email' do
+    context 'with an email outside the synthetic domain' do
       before do
         env['HTTP_X_AUTH_REQUEST_EMAIL'] = 'external@gmail.com'
       end
@@ -140,18 +141,19 @@ RSpec.describe Zammad::MpassProxyAuth do
       end
     end
 
-    context 'when a Customer with corporate email logs in' do
+    context 'when an existing Customer logs in again' do
       let!(:customer) { create(:customer, login: 'promoted@arbisoft.com', email: 'promoted@arbisoft.com') }
 
       before { env['HTTP_X_AUTH_REQUEST_EMAIL'] = 'promoted@arbisoft.com' }
 
-      it 'promotes to Agent' do
+      it 'never auto-promotes to Agent' do
         expect(customer.role?('Agent')).to be(false)
 
         middleware.call(env)
 
         customer.reload
-        expect(customer.role?('Agent')).to be(true)
+        expect(customer.role?('Agent')).to be(false)
+        expect(customer.role?('Customer')).to be(true)
       end
     end
 

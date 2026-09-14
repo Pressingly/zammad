@@ -17,8 +17,23 @@ if ENV['AUTH_TYPE'] == 'SSO' # rubocop:disable Rails/EnvironmentVariableAccess
       next
     end
 
-    %w[user_show_password_login user_lost_password user_create_account].each do |name|
-      Setting.set(name, false) if Setting.exists?(name: name)
+    # Under SSO the local credential UI is dead weight, and the guided-setup
+    # wizard is actively harmful: its router guard redirects every route to
+    # /guided-setup while system_init_done is false, so an already
+    # SSO-authenticated user lands on the create-admin sign-up screen instead
+    # of the helpdesk. There is no wizard to click through under SSO, so mark
+    # the system initialised. The first admin is granted out of band by the
+    # bundle's provision-workspaces-admin.sh.
+    {
+      'user_show_password_login' => false,
+      'user_lost_password'       => false,
+      'user_create_account'      => false,
+      'system_init_done'         => true,
+    }.each do |name, value|
+      next unless Setting.exists?(name: name)
+      next if Setting.get(name) == value
+
+      Setting.set(name, value)
     end
   end
 
