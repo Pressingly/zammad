@@ -113,10 +113,7 @@ module Zammad
       UserInfo.with_user_id(1) do
         user = User.find_by(login: email) || User.find_by(email: email)
 
-        if user
-          maybe_promote_role(user, email)
-          return user
-        end
+        return user if user
 
         create_user(email)
       end
@@ -127,44 +124,23 @@ module Zammad
 
     def create_user(email)
       local_part = email.split('@').first
-      agent_role = Role.find_by(name: 'Agent')
 
-      role_ids = if corporate_email?(email)
-                   [agent_role&.id].compact
-                 else
-                   Role.signup_role_ids
-                 end
-
+      # Every SSO user is provisioned as a plain signup user (Customer). Role is
+      # deliberately NOT derived from the email domain: DEFAULT_EMAIL_DOMAIN is
+      # the platform's *synthetic* domain for users with no verified email, so
+      # keying Agent off it would grant elevated access to exactly the
+      # unverified population. Agents and admins are granted out of band by the
+      # bundle's provision-workspaces-admin.sh.
       User.create!(
         login:         email,
         email:         email,
         firstname:     local_part&.capitalize,
         lastname:      '',
         active:        true,
-        role_ids:      role_ids,
+        role_ids:      Role.signup_role_ids,
         updated_by_id: 1,
         created_by_id: 1,
       )
-    end
-
-    def maybe_promote_role(user, email)
-      return unless corporate_email?(email)
-
-      agent_role = Role.find_by(name: 'Agent')
-      return if agent_role.nil?
-      return if user.role?('Agent')
-
-      user.role_ids = (user.role_ids + [agent_role.id]).uniq
-      user.save!
-
-      Rails.logger.info("mpass_proxy_auth: promoted user #{user.id} (#{email}) to Agent")
-    end
-
-    def corporate_email?(email)
-      domain = ENV['DEFAULT_EMAIL_DOMAIN'] # rubocop:disable Rails/EnvironmentVariableAccess
-      return false if domain.blank?
-
-      email.end_with?("@#{domain}")
     end
 
     def establish_session(env, session, user)

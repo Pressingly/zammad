@@ -28,13 +28,16 @@ UUID, not a usable identity (see Penpot regression test `3a7adafc5`).
 ## User provisioning (JIT)
 
 - **New users**: created on first SSO login with `login` = email,
-  `firstname` = email local-part. Role assignment follows the corporate
-  domain rule below.
+  `firstname` = email local-part, and the default signup role.
 - **Existing users**: looked up by `login` then `email` (both lowercased).
-- **Role assignment**: users whose email domain matches
-  `DEFAULT_EMAIL_DOMAIN` get the **Agent** role. All others get the
-  default signup role (Customer). A found Customer whose email matches
-  the corporate domain is promoted to Agent on SSO login.
+- **Role assignment**: every SSO user is created with the default signup
+  role (Customer). Roles are **never** derived from the email domain, and
+  an existing user's roles are never changed on login. `Agent` and `Admin`
+  are granted out of band by the bundle's `provision-workspaces-admin.sh`.
+  `DEFAULT_EMAIL_DOMAIN` is used only to complete bare usernames — it is
+  the platform's *synthetic* domain for users with no verified email, so
+  deriving privilege from it would elevate exactly the unverified
+  population.
 - **Session mismatch**: if the session user differs from the header
   identity, the session is silently re-keyed to the new user (follows
   the Penpot/Plane pattern).
@@ -49,9 +52,23 @@ boot:
 | `user_show_password_login` | `false` | Hides password form on login page, hides password change in profile |
 | `user_lost_password` | `false` | Disables "Forgot password?" link and backend reset endpoints |
 | `user_create_account` | `false` | Disables self-registration (not in the original plan, added defensively to prevent local signup bypassing SSO) |
+| `system_init_done` | `true` | Skips the guided-setup wizard. Its router guard redirects *every* route to `/guided-setup` while this is false, so an already SSO-authenticated user lands on the create-admin sign-up screen instead of the helpdesk |
 
 Settings are only forced when their rows exist in the database (safe during
-`db:migrate` before seeds run).
+`db:migrate` before seeds run), and a setting already holding the wanted
+value is left untouched rather than rewritten on each boot.
+
+> **Ordering dependency.** `Service::System::CheckSetup` writes
+> `system_init_done` back to `false` if it runs while no Admin exists
+> (excluding the system user). On a fresh install that window lasts until
+> `provision-workspaces-admin.sh` grants the first Admin — which itself
+> requires that user to have logged in via SSO at least once. Reaching a
+> `/guided-setup*` URL during that window re-enables the redirect until the
+> next Rails boot re-asserts the setting. Grant the first Admin promptly.
+
+`fqdn` and `http_type` are **not** set here — they are owned by the bundle's
+`dev/provision/provision-zammad.sh`, which also disables Zammad's built-in
+`auth_sso`.
 
 Additionally:
 - **Email is immutable** — a `validate` callback on User rejects email
