@@ -1,0 +1,209 @@
+# mPass Proxy Auth — SSO Middleware
+
+Rack middleware that integrates Zammad with mPass (Cognito) via
+oauth2-proxy's forwarded headers. Follows the same proxy-header shim
+pattern used by Penpot, Plane, Outline, and Twenty in the FOSS bundle.
+
+## How it works
+
+1. Traefik forwards every request through `strip-auth-headers` (removes
+   client-supplied auth headers) then `mpass-auth` (oauth2-proxy
+   ForwardAuth).
+2. oauth2-proxy sets `X-Auth-Request-Email` on authenticated requests.
+3. This middleware reads that header, resolves or creates a Zammad user,
+   and establishes a Rails session.
+
+The middleware reads **only** `X-Auth-Request-Email`. The
+`X-Auth-Request-User` header is ignored — it carries the Cognito `sub`
+UUID, not a usable identity (see Penpot regression test `3a7adafc5`).
+
+## Configuration
+
+| Env var | Required | Description |
+|---------|----------|-------------|
+| `AUTH_TYPE` | Yes | Set to `SSO` to activate the middleware. Matches the convention used by Outline, Plane, Penpot, and Twenty in the FOSS bundle. Passed via docker-compose `environment:` block |
+| `DEFAULT_EMAIL_DOMAIN` | Yes | Domain appended to bare usernames. **Fails closed** when unset — bare usernames are rejected. Cognito's `cognito:username` claim often lacks `@`, making this the primary code path |
+| `SMB_CORPORATE_ID` | No | When set, enforces corporate-ID check against the JWT `custom:corporate_id` claim in `X-Auth-Request-Access-Token`. Requests without a matching corporate ID get 403 |
+| `LOGOUT_REDIRECT_URL` | Yes (under SSO) | Platform portal URL that the per-app "Sign out" control navigates to, e.g. `https://foss.arbisoft.com`. Read at boot and mirrored into the frontend Settings. Must be an absolute `http(s)` URL; anything else is logged and ignored |
+
+## User provisioning (JIT)
+
+- **New users**: created on first SSO login with `login` = email,
+  `firstname` = email local-part, and the default signup role.
+- **Existing users**: looked up by `login` then `email` (both lowercased).
+- **Role assignment**: every SSO user is created with the default signup
+  role (Customer). Roles are **never** derived from the email domain, and
+  an existing user's roles are never changed on login. `Agent` and `Admin`
+  are granted out of band by the bundle's `provision-workspaces-admin.sh`.
+  `DEFAULT_EMAIL_DOMAIN` is used only to complete bare usernames — it is
+  the platform's *synthetic* domain for users with no verified email, so
+  deriving privilege from it would elevate exactly the unverified
+  population.
+- **Session mismatch**: if the session user differs from the header
+  identity, the session is silently re-keyed to the new user (follows
+  the Penpot/Plane pattern).
+
+## Local auth lockdown
+
+When `AUTH_TYPE=SSO`, the initializer forces these Settings on every
+boot:
+
+| Setting | Value | Effect |
+|---------|-------|--------|
+| `user_show_password_login` | `false` | Hides password form on login page, hides password change in profile |
+| `user_lost_password` | `false` | Disables "Forgot password?" link and backend reset endpoints |
+| `user_create_account` | `false` | Disables self-registration (not in the original plan, added defensively to prevent local signup bypassing SSO) |
+| `system_init_done` | `true` | Skips the guided-setup wizard. Its router guard redirects *every* route to `/guided-setup` while this is false, so an already SSO-authenticated user lands on the create-admin sign-up screen instead of the helpdesk |
+
+Settings are only forced when their rows exist in the database (safe during
+`db:migrate` before seeds run), and a setting already holding the wanted
+value is left untouched rather than rewritten on each boot.
+
+> **Ordering dependency.** `Service::System::CheckSetup` writes
+> `system_init_done` back to `false` if it runs while no Admin exists
+> (excluding the system user). On a fresh install that window lasts until
+> `provision-workspaces-admin.sh` grants the first Admin — which itself
+> requires that user to have logged in via SSO at least once. Reaching a
+> `/guided-setup*` URL during that window re-enables the redirect until the
+> next Rails boot re-asserts the setting. Grant the first Admin promptly.
+
+`fqdn` and `http_type` are **not** set here — they are owned by the bundle's
+`dev/provision/provision-zammad.sh`, which also disables Zammad's built-in
+`auth_sso`.
+
+Additionally:
+- **Email is immutable** — a `validate` callback on User rejects email
+  changes for all users except system (user_id=1). This surfaces as a
+  proper validation error (422), not a 500. This prevents users from
+  changing their SSO lookup key.
+- **Password change rejected** — `Service::User::ChangePassword` is
+  prepended with a guard that returns 403 when SSO is active. This
+  removes the upstream admin escape hatch (`admin.*` permission bypass
+  in `useCheckChangePassword`). Recovery for the bootstrap admin
+  requires `rails c` in the container. This is intentional: with mPass
+  as the sole identity source, no local password path should exist.
+
+## Logout
+
+Per-app "Sign out" is **navigation only** under SSO. It top-level navigates the
+browser to the platform portal and does **not** call any session-clearing
+endpoint — not Zammad's `DELETE /api/v1/signout`, not the `logout` GraphQL
+mutation, not `/oauth2/sign_out`, not Cognito. This follows the platform-wide
+logout rule; the only flow that actually ends a session is the portal's
+"Logout all".
+
+This is not just a rule, it is also the only thing that works. Both signout
+paths (`SessionsController#destroy` and `Gql::Mutations::Logout#resolve`) call
+`reset_session`, but the very next request still carries
+`X-Auth-Request-Email`, so `Zammad::MpassProxyAuth` immediately re-establishes
+the session and the user lands back on the dashboard. Stock logout under SSO is
+a no-op with extra steps.
+
+The portal URL is **not** derived from the request host and **not** baked in at
+build time (Zammad's assets are precompiled into the image, so a build-time
+value would pin one image to one client). Instead `Zammad::MpassLogout` reads
+`LOGOUT_REDIRECT_URL` at boot and mirrors it into two `frontend: true` Settings,
+which both frontend stacks already consume (`App.Config` in CoffeeScript,
+`useApplicationStore().config` in Vue):
+
+| Setting | Type | Value |
+|---------|------|-------|
+| `mpass_sso_active` | boolean | `AUTH_TYPE == 'SSO'` |
+| `mpass_logout_redirect_url` | string | validated `LOGOUT_REDIRECT_URL`, or `''` |
+
+Both rows are created with `create_if_not_exists` and only written when the
+value actually changes, so the sync is idempotent and safe before seeds have
+run. The sync runs **outside** the `AUTH_TYPE` guard: a deployment that stops
+using SSO gets the stored URL cleared instead of keeping a stale redirect.
+
+Frontend behaviour, in all three UIs:
+
+| `mpass_sso_active` | `mpass_logout_redirect_url` | Behaviour |
+|--------------------|-----------------------------|-----------|
+| `false` | (ignored) | Stock Zammad logout — non-SSO deployments are untouched |
+| `true` | absolute URL | `window.location.href = <portal>`, no session call |
+| `true` | empty / invalid | Logs an error and does nothing — never a session call, never a guessed host |
+
+Entry points patched (all reachable from the same image, so all are covered):
+
+| Stack | File | Covers |
+|-------|------|--------|
+| CoffeeScript | `app/assets/javascripts/app/controllers/logout.coffee` | `#logout` route, the avatar menu "Sign out" item and the keyboard shortcut, which all resolve to this route |
+| Vue desktop | `app/frontend/apps/desktop/pages/authentication/routes.ts` | `/logout` route guard |
+| Vue mobile | `app/frontend/apps/mobile/pages/authentication/routes.ts` | `/logout` route guard |
+
+Only the user-initiated entry points are patched. Involuntary session ends
+(`session_invalid`, `after_auth_modal`, switch-back-to-user,
+`useAuthenticationUpdates`) keep stock behaviour — they are not a user pressing
+"Sign out" and must not bounce anyone to the portal.
+
+> Per-app "Sign out" is **not a security boundary**: the shared `_oauth2_proxy`
+> cookie and the Cognito session survive it. Users who really need to end their
+> session must use the portal's "Logout all".
+
+## Security controls
+
+- **`DEFAULT_EMAIL_DOMAIN` fails closed**: unlike Outline/Plane/Penpot
+  which fall back to a hardcoded domain, this middleware returns 403
+  when a bare username arrives and `DEFAULT_EMAIL_DOMAIN` is unset.
+  This prevents local-part collision impersonation.
+- **Corporate-ID enforcement**: when `SMB_CORPORATE_ID` is set, the
+  access token's `custom:corporate_id` must match. Missing or
+  undecodable tokens are rejected.
+- **Header trust is topology-based**: Traefik's `strip-auth-headers`
+  middleware removes any client-supplied `X-Auth-Request-*` headers
+  before `mpass-auth` sets the real ones. The middleware does NOT
+  implement its own IP-based trust check (that is `create_sso`'s
+  `auth_sso_trusted_ips` concern, which we bypass entirely).
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `lib/zammad/mpass_proxy_auth.rb` | The Rack middleware |
+| `lib/zammad/mpass_auth_lockdown.rb` | Email immutability + password change guard |
+| `lib/zammad/mpass_logout.rb` | Env → Setting plumbing for the portal logout redirect |
+| `config/initializers/mpass_proxy_auth.rb` | Wires middleware, lockdown modules, and forces Settings on boot |
+| `doc/mpass_sso.md` | This file |
+| `spec/lib/zammad/mpass_proxy_auth_spec.rb` | RSpec tests for the Rack middleware |
+| `spec/lib/zammad/mpass_auth_lockdown_spec.rb` | RSpec tests for auth lockdown modules |
+| `spec/lib/zammad/mpass_logout_spec.rb` | RSpec tests for the logout redirect plumbing |
+
+## Important: disable `auth_sso` Setting
+
+The upstream header SSO endpoint (`create_sso`) reads `X-Forwarded-User`
+and does NOT auto-create users. With our middleware active, leaving
+`auth_sso` enabled opens a second, weaker authentication path that
+accepts identity from a different header without JIT provisioning.
+
+**The provisioner MUST set `auth_sso` to `false`** (or restrict
+`auth_sso_trusted_ips` to an empty list). This middleware fully replaces
+the upstream SSO flow.
+
+## Design decisions
+
+- **Rack middleware, not a controller** — Zammad is a unified Rails
+  monolith (like Penpot/Plane), so the middleware form applies. A
+  controller endpoint is only needed for split FE/BE deployments
+  (Twenty/SurfSense).
+- **Email is immutable** — the email IS the SSO lookup key. Allowing
+  local email changes would either lock users out or pre-stage profiles
+  for hijacking.
+- **`create_sso` is bypassed** — the upstream SSO endpoint does not
+  auto-create users and reads `X-Forwarded-User`, not
+  `X-Auth-Request-Email`. Our middleware replaces its functionality
+  entirely.
+- **Maintenance mode respected** — the middleware checks
+  `Setting.get('maintenance_mode')` and returns 403 for non-admin
+  users, matching the controller-level `authentication_check_prerequesits`
+  behavior.
+- **Module patching uses `to_prepare`** — the `User.include` and
+  `Service::User::ChangePassword.prepend` calls run inside
+  `config.to_prepare` so the patches survive class reloading in
+  development mode. Settings are forced in `after_initialize` (once
+  per boot) with an `exists?` guard to handle pre-seed state.
+- **No local password recovery** — the `RejectPasswordChange` prepend
+  blocks all callers including admins. With mPass as the sole identity
+  source, password-based recovery is replaced by Cognito-level recovery.
+  If the bootstrap admin needs emergency access, use `rails c` in the
+  container.
