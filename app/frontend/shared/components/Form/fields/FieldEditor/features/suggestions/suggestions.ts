@@ -43,15 +43,6 @@ const setEditorAttr = (editor: Editor, name: string, value: string | null) => {
   else dom.setAttribute(name, value)
 }
 
-let listboxIdCounter = 0
-
-const setEditorAttr = (editor: Editor, name: string, value: string | null) => {
-  const dom = editor?.view?.dom
-  if (!dom) return
-  if (value === null) dom.removeAttribute(name)
-  else dom.setAttribute(name, value)
-}
-
 export default function buildMentionExtension<T>(
   options: MentionOptions<T>,
 ): Omit<SuggestionOptions, 'editor'> {

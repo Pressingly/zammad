@@ -286,8 +286,4 @@ class ExternalCredential::Google < ExternalCredential::Base::ChannelXoauth2
   def self.generate_state
     SecureRandom.urlsafe_base64
   end
-
-  def self.generate_state
-    SecureRandom.urlsafe_base64
-  end
 end
