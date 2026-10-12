@@ -11,6 +11,7 @@ require 'models/concerns/has_image_sanitized_note_examples'
 require 'models/concerns/has_object_manager_attributes_examples'
 require 'models/concerns/has_taskbars_examples'
 require 'models/concerns/has_recent_closes_examples'
+require 'models/concerns/has_recent_views_examples'
 
 RSpec.describe Organization, type: :model do
   subject(:organization) { create(:organization) }
@@ -25,6 +26,7 @@ RSpec.describe Organization, type: :model do
   it_behaves_like 'HasObjectManagerAttributes'
   it_behaves_like 'HasTaskbars'
   it_behaves_like 'HasRecentCloses'
+  it_behaves_like 'HasRecentViews'
 
   describe 'Class methods:' do
     describe '.where_or_cis' do
@@ -127,6 +129,12 @@ RSpec.describe Organization, type: :model do
   end
 
   describe 'Updating organization members' do
+    # the member and organization associations are only part of the attributes for privileged
+    # callers, while these examples are about cache invalidation
+    around do |example|
+      UserInfo.with_system_context { example.run }
+    end
+
     context 'when member gets removed' do
       let(:customer) { create(:customer, organization: organization) }
 
@@ -183,6 +191,12 @@ RSpec.describe Organization, type: :model do
   end
 
   describe 'Updating secondary organization members' do
+    # the member and organization associations are only part of the attributes for privileged
+    # callers, while these examples are about cache invalidation
+    around do |example|
+      UserInfo.with_system_context { example.run }
+    end
+
     context 'when member gets removed' do
       let(:customer)               { create(:customer, organization: organization) }
       let(:secondary_organization) { create(:organization) }
@@ -265,6 +279,73 @@ RSpec.describe Organization, type: :model do
       organization.destroy_dependent_associations
       expect { user_1_ticket_1.reload }.not_to raise_error
       expect { user_2_ticket_1.reload }.to raise_exception(ActiveRecord::RecordNotFound)
+    end
+  end
+
+  describe '#attributes_with_association_ids' do
+    let(:organization)         { create(:organization) }
+    let(:foreign_organization) { create(:organization) }
+    let(:customer)             { create(:customer, organization: organization) }
+    let(:agent)                { create(:agent) }
+    let(:secondary_member) do
+      create(:customer, organization: foreign_organization, organizations: [organization])
+    end
+
+    before { secondary_member }
+
+    it 'includes the secondary member ids without a user context' do
+      expect(organization.attributes_with_association_ids['secondary_member_ids']).to eq([secondary_member.id])
+    end
+
+    it 'omits the secondary member ids for a customer on a warm cache' do
+      # The cache stores the unfiltered attributes and is read before the filtering runs, so the
+      # cache hit is a second route to the same hash and must be filtered just as well.
+      organization.attributes_with_association_ids
+
+      UserInfo.with_user_id(customer.id) do
+        expect(organization.attributes_with_association_ids).not_to include('secondary_member_ids')
+      end
+    end
+
+    it 'includes the secondary member ids for an agent' do
+      UserInfo.with_user_id(agent.id) do
+        expect(organization.attributes_with_association_ids['secondary_member_ids']).to eq([secondary_member.id])
+      end
+    end
+
+    it 'omits the secondary member ids for a customer' do
+      UserInfo.with_user_id(customer.id) do
+        expect(organization.attributes_with_association_ids).not_to include('secondary_member_ids')
+      end
+    end
+  end
+
+  describe '#assets' do
+    let(:organization)         { create(:organization) }
+    let(:foreign_organization) { create(:organization) }
+    let(:customer)             { create(:customer, organization: organization) }
+    let(:agent)                { create(:agent) }
+    let(:secondary_member) do
+      create(:customer, organization: foreign_organization, organizations: [organization])
+    end
+
+    before { secondary_member }
+
+    # Covers every asset consumer at once, including the global search endpoint, which is the only
+    # search a customer can reach.
+    it 'does not ship a secondary member as an asset to a customer', :aggregate_failures do
+      UserInfo.with_user_id(customer.id) do
+        assets = organization.assets({})
+
+        expect(assets[described_class.to_app_model][organization.id].keys).to match_array(%w[id name active])
+        expect(assets[User.to_app_model]).not_to include(secondary_member.id)
+      end
+    end
+
+    it 'still ships a secondary member as an asset to an agent' do
+      UserInfo.with_user_id(agent.id) do
+        expect(organization.assets({})[User.to_app_model]).to include(secondary_member.id)
+      end
     end
   end
 end

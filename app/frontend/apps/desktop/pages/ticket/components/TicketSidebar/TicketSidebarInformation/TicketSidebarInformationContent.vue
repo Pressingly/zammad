@@ -5,7 +5,6 @@ import { computed, toRef, useTemplateRef } from 'vue'
 
 import { useTicketView } from '#shared/entities/ticket/composables/useTicketView.ts'
 import { useApplicationStore } from '#shared/stores/application.ts'
-import { useSessionStore } from '#shared/stores/session.ts'
 import type { ObjectLike } from '#shared/types/utils.ts'
 
 import { useFlyout } from '#desktop/components/CommonFlyout/useFlyout.ts'
@@ -20,9 +19,12 @@ import {
 } from '../../TicketDetailView/actions/useTicketHistory.ts'
 import TicketSidebarContent from '../TicketSidebarContent.vue'
 
+import { useAiSuggestedAnswersAvailability } from './TicketSidebarInformationContent/composables/useAiSuggestedAnswersAvailability.ts'
+import { useKnowledgeBaseAiSuggestedAnswers } from './TicketSidebarInformationContent/composables/useKnowledgeBaseAiSuggestedAnswers.ts'
+import { useKnowledgeBaseLinkList } from './TicketSidebarInformationContent/composables/useKnowledgeBaseLinkList.ts'
 import TicketAccountedTime from './TicketSidebarInformationContent/TicketAccountedTime.vue'
-import TicketAIKnowledgeBaseAnswers from './TicketSidebarInformationContent/TicketAIKnowledgeBaseAnswers.vue'
 import TicketLinks from './TicketSidebarInformationContent/TicketLinks.vue'
+import TicketRelatedKnowledge from './TicketSidebarInformationContent/TicketRelatedKnowledge.vue'
 import TicketSubscribers from './TicketSidebarInformationContent/TicketSubscribers.vue'
 import TicketTags from './TicketSidebarInformationContent/TicketTags.vue'
 
@@ -30,22 +32,13 @@ const props = defineProps<TicketSidebarContentProps>()
 
 const persistentStates = defineModel<ObjectLike>({ required: true })
 
-const { ticket } = useTicketInformation()
+const { ticket, ticketId } = useTicketInformation()
+
+const config = toRef(useApplicationStore(), 'config')
 
 const ticketLinksInstance = useTemplateRef('ticket-links')
 
 const { isTicketAgent, isTicketEditable } = useTicketView(ticket)
-const config = toRef(useApplicationStore(), 'config')
-const { hasPermission } = useSessionStore()
-
-const showAIKnowledgeBaseAnswers = computed(
-  () =>
-    isTicketAgent.value &&
-    hasPermission('knowledge_base.editor') &&
-    config.value.kb_active &&
-    config.value.ai_provider &&
-    config.value.ai_assistance_kb_answer_from_ticket_generation,
-)
 
 const ticketMergeFlyoutName = 'ticket-merge'
 const ticketChangeCustomerFlyoutName = 'ticket-change-customer'
@@ -95,6 +88,37 @@ const actions = computed<MenuItem[]>(() => [
       }),
   },
 ])
+
+// Agent read access is a per-ticket matter: an agent who is the customer of a ticket in a group
+//   they cannot access sees it in the customer view, where the knowledge base is not theirs to work
+//   with — and where the server would deny both the link list and the suggestions search.
+const isKbActive = computed(() => config.value.kb_active && isTicketAgent.value)
+
+const {
+  linkedAnswerIds,
+  linkedAnswers,
+  targetType,
+  isLoading: isKnowledgeBaseLinkListLoading,
+} = useKnowledgeBaseLinkList(ticketId, {
+  enabled: isKbActive,
+})
+
+const { showAiSuggestedAnswers, showRelevanceScore } =
+  useAiSuggestedAnswersAvailability(isTicketAgent)
+
+const {
+  answers: aiSuggestedAnswers,
+  loading: isAiSuggestedAnswersLoading,
+  pending: isAiSuggestedAnswersPending,
+  hasError: hasAiSuggestedAnswersError,
+  errorDetail: aiSuggestedAnswersErrorDetail,
+  retrySearch: retryAiSuggestedAnswersSearch,
+  refreshKeepingAnswers: refreshAiSuggestedAnswers,
+} = useKnowledgeBaseAiSuggestedAnswers(ticketId, {
+  queryEnabled: showAiSuggestedAnswers,
+  subscriptionEnabled: showAiSuggestedAnswers,
+  articleCount: () => ticket.value?.articleCount,
+})
 </script>
 
 <template>
@@ -132,12 +156,26 @@ const actions = computed<MenuItem[]>(() => [
     </CommonSectionCollapse>
 
     <CommonSectionCollapse
-      v-if="showAIKnowledgeBaseAnswers"
+      v-if="isKbActive && (isTicketEditable || linkedAnswers.length || aiSuggestedAnswers.length)"
       id="ticket-ai-knowledge-base-answers"
       v-model="persistentStates.collapseKnowledgeBase"
       :title="__('Related knowledge')"
     >
-      <TicketAIKnowledgeBaseAnswers />
+      <TicketRelatedKnowledge
+        :linked-answers="linkedAnswers"
+        :linked-answer-ids="linkedAnswerIds"
+        :target-type="targetType"
+        :is-link-list-loading="isKnowledgeBaseLinkListLoading"
+        :show-ai-suggested-answers="showAiSuggestedAnswers"
+        :ai-suggested-answers="aiSuggestedAnswers"
+        :show-relevance-score="showRelevanceScore"
+        :is-ai-suggested-answers-loading="isAiSuggestedAnswersLoading"
+        :is-ai-suggested-answers-pending="isAiSuggestedAnswersPending"
+        :has-ai-suggested-answers-error="hasAiSuggestedAnswersError"
+        :ai-suggested-answers-error-detail="aiSuggestedAnswersErrorDetail"
+        @retry-ai-suggested-answers-search="retryAiSuggestedAnswersSearch"
+        @refresh-ai-suggested-answers="refreshAiSuggestedAnswers"
+      />
     </CommonSectionCollapse>
 
     <CommonSectionCollapse

@@ -1,8 +1,11 @@
 # Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
 require 'rails_helper'
+require 'models/concerns/has_audit_logs_examples'
 
 RSpec.describe PostmasterFilter, type: :model do
+  it_behaves_like 'HasAuditLogs', update_attribute: 'name', update_value: 'Some updated name'
+
   describe '#create' do
     let(:filter) do
       {
@@ -74,6 +77,36 @@ RSpec.describe PostmasterFilter, type: :model do
                              }, message: "Can't use regex '#{regex}'")
           end
         end
+      end
+    end
+  end
+
+  describe 'validates perform before saving' do
+    let(:filter) do
+      {
+        name:          'RSpec: PostmasterFilter#perform',
+        match:         { from: { operator: 'contains', value: 'nobody@example.com' } },
+        perform:       perform,
+        channel:       'email',
+        active:        true,
+        created_by_id: 1,
+        updated_by_id: 1,
+      }
+    end
+
+    context 'when a perform action has a blank value' do
+      let(:perform) { { 'x-zammad-ticket-tags' => { 'operator' => 'add', 'value' => '' } } }
+
+      it 'is rejected' do
+        expect { described_class.create!(filter) }.to raise_error(ActiveRecord::RecordInvalid)
+      end
+    end
+
+    context 'when a perform action has a present value' do
+      let(:perform) { { 'x-zammad-ticket-tags' => { 'operator' => 'add', 'value' => 'foo' } } }
+
+      it 'is accepted' do
+        expect(described_class.create!(filter)).to be_an(described_class)
       end
     end
   end

@@ -1,7 +1,7 @@
 # Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
 class LinksController < ApplicationController
-  prepend_before_action -> { authorize! }, only: %i[add remove]
+  prepend_before_action -> { authorize! }, only: %i[index add remove]
   prepend_before_action :authentication_check
 
   # GET /api/v1/links
@@ -44,10 +44,10 @@ class LinksController < ApplicationController
       link_object_source_value: object.id,
     )
 
-    if link
+    if link.persisted?
       render json: link, status: :created
     else
-      render json: link.errors, status: :unprocessable_content
+      render json: { error: link.errors.full_messages.first }, status: :unprocessable_content
     end
   end
 

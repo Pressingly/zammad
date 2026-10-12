@@ -2,9 +2,13 @@
 
 # Class variables are used here as performance optimization.
 # Technically it is not thread-safe, but it never caused issues.
-# rubocop:disable Style/ClassVars
+# rubocop:disable-next Style/ClassVars
 class Setting < ApplicationModel
   include ChecksClientNotification
+
+  include Setting::HasAuditLogs
+
+  SENSITIVE_SETTING_NAMES = %w[secret auth_ password pw credential endpoint_key _config _token recovery_codes pwd captcha_options].freeze
 
   store         :options
   store         :state_current
@@ -14,11 +18,12 @@ class Setting < ApplicationModel
   before_validation :state_check
   before_create :set_initial
   after_save    :reset_class_cache_key
-  after_commit  :reset_other_caches, :broadcast_frontend, :check_refresh
+  after_commit  :reset_other_caches, :broadcast_frontend, :check_refresh, :schedule_vector_index_reconcile
 
   validates_with Setting::Validator, if: -> { !skip_validate }
 
   attr_accessor :state, :skip_validate
+  attr_reader :vector_index_rebuild_started
 
   @@current         = {}
   @@raw             = {}
@@ -125,6 +130,10 @@ reload config settings
   def self.filter_param(key, value)
     @@parameter_filter ||= ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
     @@parameter_filter.filter_param(key, value)
+  end
+
+  def sensitive?
+    SENSITIVE_SETTING_NAMES.any? { |word| name.include?(word) }
   end
 
   private
@@ -271,9 +280,30 @@ reload config settings
     AppVersion.trigger_browser_reload AppVersion::MSG_CONFIG_CHANGED
   end
 
+  # Names that decide whether anything embeds at all - a change to either can leave the vector index
+  # out of step with what is configured.
+  VECTOR_INDEX_RECONCILE_SETTINGS = %w[ai_provider vectordb_enabled].freeze
+
+  # A configuration change made while one of these was disabled must not be lost: re-enabling
+  # compares what the index holds against what is configured now, rather than trusting that nothing
+  # changed just because nothing could have rebuilt it in the meantime. A short toggle where nothing
+  # actually changed reconciles to a no-op.
+  #
+  # `vectordb_enabled` is here for the writers that pass no controller: the admin UI posts to
+  # /ai/vector_index/sync after flipping it, but `Setting.set` from the console or the API does not,
+  # and the first build has to happen either way.
+  #
+  # Guarded on the vectordb settings existing at all: this runs on every setting save, including the
+  # seed run that creates `ai_provider` itself before `vectordb_enabled` exists yet.
+  def schedule_vector_index_reconcile
+    return if VECTOR_INDEX_RECONCILE_SETTINGS.exclude?(name)
+    return if !Setting.exists?(name: 'vectordb_enabled')
+
+    @vector_index_rebuild_started = Service::AI::VectorDB::Reconcile.execute == true
+  end
+
   def transform
     Array(preferences[:transformations])
       .map { |klass| klass.constantize.new(self).run }
   end
 end
-# rubocop:enable Style/ClassVars

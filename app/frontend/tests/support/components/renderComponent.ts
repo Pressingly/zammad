@@ -15,7 +15,7 @@ import { afterEach, vi } from 'vitest'
 import { isRef, nextTick, ref, watchEffect, unref, type App, type Plugin, type Ref } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 
-import type { DependencyProvideApi } from '#tests/support/components/types.ts'
+import type { DependencyProvideApi, SessionHistoryWindow } from '#tests/support/components/types.ts'
 
 import CommonAlert from '#shared/components/CommonAlert/CommonAlert.vue'
 import CommonBadge from '#shared/components/CommonBadge/CommonBadge.vue'
@@ -35,7 +35,7 @@ import { initializeTwoFactorPlugins } from '#shared/entities/two-factor/composab
 import { buildFormKitPluginConfig } from '#shared/form/index.ts'
 import { i18n } from '#shared/i18n.ts'
 import applicationConfigPlugin from '#shared/plugins/applicationConfigPlugin.ts'
-import tooltip from '#shared/plugins/directives/tooltip/index.ts'
+import TooltipPlugin from '#shared/plugins/directives/tooltip/index.ts'
 import { setCurrentRouter } from '#shared/router/router.ts'
 import { initializeWalker } from '#shared/router/walker.ts'
 import type { AppName } from '#shared/types/app.ts'
@@ -110,7 +110,6 @@ export interface ExtendedMountingOptions<Props> extends ComponentMountingOptions
   confirmation?: boolean
   form?: boolean
   provide?: DependencyProvideApi
-  formField?: boolean
   unmount?: boolean
   dialog?: boolean
   flyout?: boolean
@@ -160,7 +159,9 @@ const defaultWrapperOptions: ExtendedMountingOptions<unknown> = {
       CommonBadge,
     },
     stubs: {},
-    directives: { [tooltip.name]: tooltip.directive },
+    directives: {
+      [TooltipPlugin.name]: TooltipPlugin.directive,
+    },
     plugins,
   },
 }
@@ -282,7 +283,9 @@ let formInitialized = false
 const initializeForm = () => {
   if (formInitialized) return
 
-  plugins.push([formPlugin, buildFormKitPluginConfig(undefined, formFields)])
+  // Commit input values synchronously in tests (no FormKit debounce `delay`), so
+  // submits read settled values instead of racing the form's async settle.
+  plugins.push([formPlugin, buildFormKitPluginConfig({ delay: 0 }, formFields)])
   defaultWrapperOptions.shallow = false
 
   formInitialized = true
@@ -373,6 +376,13 @@ setTestState({
 
 afterEach(() => {
   router?.restoreMethods()
+
+  // jsdom queues a history traversal (`router.back()`, e.g. from `walker.back()`) as a
+  //   `setTimeout(…, 0)` task on the window, which is shared by every test in the file. One that
+  //   is still pending when the test ends fires in the middle of the next one, unmounting its
+  //   freshly rendered view and reactivating the previous test's route. Nothing may traverse
+  //   across a test boundary, so drop whatever is still queued.
+  ;(window as SessionHistoryWindow)._sessionHistory?.clearHistoryTraversalTasks()
 
   imageViewerOptions.value = {
     visible: false,
@@ -484,13 +494,6 @@ const renderComponent = <Props>(
     setupCommonVisualConfig(wrapperOptions.visuals)
   } else {
     initDefaultVisuals()
-  }
-
-  if (wrapperOptions.form && wrapperOptions.formField) {
-    defaultWrapperOptions.props ||= {}
-
-    // Reset the default of 20ms for testing.
-    defaultWrapperOptions.props.delay = 0
   }
 
   if (wrapperOptions.plugins) {

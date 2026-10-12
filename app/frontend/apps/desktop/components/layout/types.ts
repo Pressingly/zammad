@@ -12,3 +12,17 @@ export enum SidebarPosition {
 }
 
 export type ContentAlignment = 'center' | 'start'
+
+export enum SidebarName {
+  Primary = 'primary',
+  TicketContent = 'ticket-content',
+  TicketOverviews = 'ticket-overviews',
+  PersonalSetting = 'personal-setting',
+  KnowledgeBaseAnswer = 'knowledge-base-answer',
+  KnowledgeBaseAnswerCreate = 'knowledge-base-answer-create',
+  KnowledgeBaseAnswerEdit = 'knowledge-base-answer-edit',
+}
+
+export interface ToggleOptions {
+  storage?: 'session' | 'persisted'
+}

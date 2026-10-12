@@ -1,7 +1,7 @@
 # Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
 class CreateDoorkeeperTables < ActiveRecord::Migration[4.2]
-  def change
+  def change # rubocop:disable Metrics/AbcSize
     create_table :oauth_applications do |t|
       t.string  :name,         null: false
       t.string  :uid,          null: false
@@ -25,6 +25,7 @@ class CreateDoorkeeperTables < ActiveRecord::Migration[4.2]
     end
 
     add_index :oauth_access_grants, :token, unique: true
+    add_index :oauth_access_grants, :application_id
     add_foreign_key(
       :oauth_access_grants,
       :oauth_applications,
@@ -55,12 +56,13 @@ class CreateDoorkeeperTables < ActiveRecord::Migration[4.2]
       # previous tokens are revoked as soon as a new access token is created.
       # Comment out this line if you'd rather have refresh tokens
       # instantly revoked.
-      t.string   :previous_refresh_token, null: false, default: ''
+      t.string :previous_refresh_token, null: false, default: ''
     end
 
     add_index :oauth_access_tokens, :token, unique: true
     add_index :oauth_access_tokens, :resource_owner_id
     add_index :oauth_access_tokens, :refresh_token, unique: true
+    add_index :oauth_access_tokens, :application_id
     add_foreign_key(
       :oauth_access_tokens,
       :oauth_applications,

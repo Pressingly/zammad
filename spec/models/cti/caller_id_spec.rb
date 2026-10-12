@@ -147,10 +147,9 @@ RSpec.describe Cti::CallerId do
       context 'shared by multiple CallerIds' do
         context '(for different users)' do
           subject!(:caller_ids) do
-            #  rubocop:disable FactoryBot/CreateList
+            #  rubocop:disable-next FactoryBot/CreateList
             [create(:caller_id, caller_id: number, user: create(:user)),
              create(:caller_id, caller_id: number, user: create(:user))]
-            #  rubocop:enable FactoryBot/CreateList
           end
 
           it 'returns all corresponding CallerId records' do
@@ -280,6 +279,17 @@ RSpec.describe Cti::CallerId do
       it 'returns an empty array' do
         expect(described_class.known_agents_by_number('49123457').count).to eq(0)
       end
+    end
+  end
+
+  describe '.add' do
+    let(:ticket)   { create(:ticket) }
+    let!(:article) { create(:ticket_article, ticket: ticket, body: 'Please call me back on 0049 30 9876543.') }
+
+    it 'stores the phone number against the ticket, keyed by the article id (existing behavior)' do
+      described_class.add(ticket)
+
+      expect(described_class.where(object: 'Ticket', o_id: article.id, caller_id: '49309876543')).to exist
     end
   end
 

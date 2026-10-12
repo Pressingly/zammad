@@ -190,6 +190,16 @@ describe('QueryHandler', () => {
       })
     })
 
+    it('loaded() resolves once the query has settled', async () => {
+      await scope.run(async () => {
+        const queryHandlerObject = new QueryHandler(sampleQuery({ id: 1 }))
+
+        await expect(queryHandlerObject.loaded()).resolves.toBeUndefined()
+
+        expect(queryHandlerObject.result().value).toEqual(querySampleResult)
+      })
+    })
+
     it('loaded result is also resolved after additional result call with active trigger refetch', async () => {
       await scope.run(async () => {
         const queryHandlerObject = new QueryHandler(sampleLazyQuery({ id: 1 }))
@@ -219,19 +229,28 @@ describe('QueryHandler', () => {
       })
     })
 
-    it('on result trigger', async () => {
+    it('registers and unregisters an onResult callback', async () => {
       await scope.run(async () => {
-        expect.assertions(1)
+        expect.assertions(2)
 
         const queryHandlerObject = new QueryHandler(sampleQuery({ id: 1 }))
+        const resultCallbackSpy = vi.fn()
 
-        queryHandlerObject.onResult((result) => {
-          if (result.data) {
-            expect(result.data).toEqual(querySampleResult)
-          }
-        })
+        const { off } = queryHandlerObject.onResult((result) => resultCallbackSpy(result))
 
         await waitFirstResult(queryHandlerObject)
+
+        expect(resultCallbackSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ data: querySampleResult }),
+        )
+
+        const callbackCountBeforeOff = resultCallbackSpy.mock.calls.length
+
+        off()
+        await queryHandlerObject.refetch()
+        await waitForNextTick()
+
+        expect(resultCallbackSpy).toHaveBeenCalledTimes(callbackCountBeforeOff)
       })
     })
 
@@ -285,6 +304,14 @@ describe('QueryHandler', () => {
           const { notifications } = useNotifications()
 
           expect(notifications.value.length).toBe(1)
+        })
+      })
+
+      it('loaded() resolves even when the query errors', async () => {
+        await scope.run(async () => {
+          const queryHandlerObject = new QueryHandler(sampleQuery({ id: 1 }))
+
+          await expect(queryHandlerObject.loaded()).resolves.toBeUndefined()
         })
       })
 

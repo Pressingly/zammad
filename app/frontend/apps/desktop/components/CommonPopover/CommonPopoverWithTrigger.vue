@@ -4,18 +4,22 @@
 import { onClickOutside, onLongPress, useElementHover, whenever } from '@vueuse/core'
 import { computed, onDeactivated, onUnmounted, shallowRef, watch } from 'vue'
 
+import type { Link } from '#shared/types/router.ts'
 import getUuid from '#shared/utils/getUuid.ts'
 
 import CommonPopover, {
   type Props as CommonPopoverProps,
 } from '#desktop/components/CommonPopover/CommonPopover.vue'
 import { usePopover } from '#desktop/components/CommonPopover/usePopover.ts'
-import { useTransitionConfig } from '#desktop/composables/useTransitionConfig.ts'
 
 export interface Props extends Omit<CommonPopoverProps, 'owner'> {
-  triggerLink?: string
+  triggerLink?: Link
   triggerLinkClass?: string
   triggerLinkActiveClass?: string
+  /**
+   * If set, the popover will not show up
+   */
+  disabled?: boolean
   noFocusStyling?: boolean
   noHoverStyling?: boolean
   noMinWidth?: boolean
@@ -49,21 +53,32 @@ onClickOutside(
 )
 
 onLongPress(popoverTarget, () => {
+  if (props.disabled) return
+
   hasOpenedViaLongPress.value = true
 
   open()
 })
 
-const { timings } = useTransitionConfig()
+const onTriggerSpace = (event: KeyboardEvent) => {
+  if (props.disabled) return
 
+  event.preventDefault()
+
+  open()
+}
+
+// NB: We purposefully don't use `useDelayTimings` values here, because they may be 0 for users with reduced motion
+//   preferences. This delay is meant to prevent accidental popover opening/closing when the user is moving their mouse
+//   across the screen,  and it's not related to transitions. We want it to be a small, but noticeable delay always.
 const isPopoverHovered = useElementHover(popoverElement, {
-  delayEnter: timings.veryShort,
-  delayLeave: timings.short,
+  delayEnter: 100,
+  delayLeave: 200,
 })
 
 const isPopoverTargetHovered = useElementHover(popoverTarget, {
-  delayEnter: timings.veryShort,
-  delayLeave: timings.short,
+  delayEnter: 100,
+  delayLeave: 200,
 })
 
 watch([isPopoverHovered, isPopoverTargetHovered], ([isPopoverHovered, isPopoverTargetHovered]) => {
@@ -95,11 +110,14 @@ onDeactivated(() => {
 onUnmounted(() => {
   if (isOpen.value) close()
 })
+
+defineExpose({ hasOpenedViaLongPress })
 </script>
 
 <template>
   <!-- on long click we don't want to navigate -->
   <CommonPopover
+    v-if="!disabled"
     v-bind="$props"
     :id="uniqueId"
     ref="popover"
@@ -126,8 +144,8 @@ onUnmounted(() => {
     :link="triggerLink ? triggerLink : undefined"
     :disabled="(triggerLink && hasOpenedViaLongPress) || undefined"
     tabindex="0"
-    :aria-controls="uniqueId"
-    :aria-expanded="isOpen"
+    :aria-controls="disabled ? undefined : uniqueId"
+    :aria-expanded="disabled ? undefined : isOpen"
     class="group transition-none empty:hidden"
     :class="[
       triggerLinkClass ?? '',
@@ -139,7 +157,7 @@ onUnmounted(() => {
         'hover:outline-1 hover:outline-blue-600 hover:dark:outline-blue-900': !noHoverStyling,
       },
     ]"
-    @keydown.space.prevent="open()"
+    @keydown.space="onTriggerSpace"
     @click="hasOpenedViaLongPress && $event.preventDefault()"
   >
     <slot

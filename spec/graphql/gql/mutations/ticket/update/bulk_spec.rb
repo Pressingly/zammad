@@ -46,6 +46,45 @@ RSpec.describe Gql::Mutations::Ticket::Update::Bulk, :aggregate_failures, type: 
         expect(ticket1.reload).to have_attributes(title: 'Ticket Bulk Update Mutation Test')
       end
 
+      context 'with object attribute values' do
+        let(:input_payload) do
+          { title: 'Ticket Bulk Update Mutation Test', objectAttributeValues: [] }
+        end
+
+        it 'updates the attributes' do
+          gql.execute(query, variables: variables)
+          expect(gql.result.data).to eq(expected_response)
+          expect(ticket1.reload).to have_attributes(title: 'Ticket Bulk Update Mutation Test')
+        end
+
+        context 'with a custom object attribute', db_strategy: :reset do
+          let(:other_customer) { create(:customer) }
+          let(:object_attribute) do
+            screens = { create: { 'admin.organization': { shown: true, required: false } } }
+            create(:object_manager_attribute_text, object_name: 'Ticket', screens: screens).tap do |_oa|
+              ObjectManager::Attribute.migration_execute
+            end
+          end
+          let(:input_payload) do
+            {
+              title:                 'Ticket Bulk Update Mutation Test',
+              objectAttributeValues: [
+                { name: object_attribute.name, value: 'object_attribute_value' },
+                { name: 'customer_id',         value: other_customer.id },
+              ],
+            }
+          end
+
+          it 'applies the custom attribute and drops the internal one' do
+            gql.execute(query, variables: variables)
+
+            expect(gql.result.data).to eq(expected_response)
+            expect(ticket1.reload.public_send(object_attribute.name)).to eq('object_attribute_value')
+            expect(ticket1.reload.customer_id).to eq(customer.id)
+          end
+        end
+      end
+
       context 'when a ticket update fails' do
         before do
           allow(Service::Ticket::Update).to receive(:execute).and_wrap_original do |m, *args, **kwargs|
@@ -244,37 +283,38 @@ RSpec.describe Gql::Mutations::Ticket::Update::Bulk, :aggregate_failures, type: 
   end
 
   describe 'selector validation', authenticated_as: :agent do
-    let(:ticket_ids)   { nil }
-    let(:overview_id)  { nil }
-    let(:search_query) { nil }
-    let(:selector)     { { entityIds: ticket_ids, overviewId: overview_id, searchQuery: search_query } }
+    let(:ticket_ids)    { nil }
+    let(:overview_id)   { nil }
+    let(:search_query)  { nil }
+    let(:search_filter) { nil }
+    let(:selector)      { { entityIds: ticket_ids, overviewId: overview_id, searchQuery: search_query, searchFilter: search_filter } }
 
     before do
       allow_any_instance_of(described_class).to receive(:resolve)
     end
 
-    context 'when no arguments provided' do
+    context 'when no arguments are provided' do
       it 'raises an error' do
         gql.execute(query, variables:)
 
         expect(gql.result.error)
-          .to include(message: 'Exactly one of entity_ids, overview_id, or search_query must be provided.')
+          .to include(message: 'Exactly one of entity_ids, overview_id, or pair of search_query and/or search_filter must be provided.')
       end
     end
 
-    context 'when multiple arguments provided' do
-      let(:ticket_ids) { [1, 2] }
+    context 'when multiple arguments are provided' do
+      let(:ticket_ids)   { [1, 2] }
       let(:search_query) { 'query' }
 
       it 'raises an error' do
         gql.execute(query, variables:)
 
         expect(gql.result.error)
-          .to include(message: 'Exactly one of entity_ids, overview_id, or search_query must be provided.')
+          .to include(message: 'Exactly one of entity_ids, overview_id, or pair of search_query and/or search_filter must be provided.')
       end
     end
 
-    context 'when only entity_ids provided' do
+    context 'when only entity_ids is provided' do
       let(:ticket)     { create(:ticket) }
       let(:ticket_ids) { [gql.id(ticket)] }
 
@@ -287,7 +327,7 @@ RSpec.describe Gql::Mutations::Ticket::Update::Bulk, :aggregate_failures, type: 
       end
     end
 
-    context 'when only overview_id provided' do
+    context 'when only overview_id is provided' do
       let(:overview) { create(:overview) }
       let(:overview_id) { gql.id(overview) }
 
@@ -300,13 +340,61 @@ RSpec.describe Gql::Mutations::Ticket::Update::Bulk, :aggregate_failures, type: 
       end
     end
 
-    context 'when only search_query provided' do
+    context 'when only search_query is provided' do
       let(:search_query) { 'query' }
 
       it 'passes search query to resolve' do
         expect_any_instance_of(described_class)
           .to receive(:resolve)
           .with(selector: hash_including(search_query:), perform: anything)
+
+        gql.execute(query, variables:)
+      end
+    end
+
+    context 'when only search_filter is provided' do
+      let(:search_filter) do
+        {
+          operator:   'AND',
+          conditions: [
+            {
+              name:     'ticket.title',
+              operator: 'matches',
+              value:    'help',
+            },
+          ],
+        }
+      end
+
+      it 'passes search filter to resolve' do
+        expect_any_instance_of(described_class)
+          .to receive(:resolve)
+          .with(selector: hash_including(search_filter:), perform: anything)
+
+        gql.execute(query, variables:)
+      end
+    end
+
+    context 'when both search_query and search_filter are provided' do
+      let(:search_query) { 'query' }
+
+      let(:search_filter) do
+        {
+          operator:   'AND',
+          conditions: [
+            {
+              name:     'ticket.title',
+              operator: 'matches',
+              value:    'help',
+            },
+          ],
+        }
+      end
+
+      it 'passes both search query and search filter to resolve' do
+        expect_any_instance_of(described_class)
+          .to receive(:resolve)
+          .with(selector: hash_including(search_query:, search_filter:), perform: anything)
 
         gql.execute(query, variables:)
       end

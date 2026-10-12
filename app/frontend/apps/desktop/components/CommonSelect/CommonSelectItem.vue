@@ -1,28 +1,19 @@
 <!-- Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/ -->
 
 <script setup lang="ts">
-import { computed, type ConcreteComponent } from 'vue'
+import { computed } from 'vue'
 
-import type { MatchedSelectOption, SelectOption } from '#shared/components/CommonSelect/types.ts'
+import type { SelectOption } from '#shared/components/CommonSelect/types.ts'
 import type { AutoCompleteOption } from '#shared/components/Form/fields/FieldAutocomplete/types'
 import { i18n } from '#shared/i18n.ts'
 import { useLocaleStore } from '#shared/stores/locale.ts'
+import { splitLabelByMatch } from '#shared/utils/labelMatching.ts'
 
-const props = defineProps<{
-  option: AutoCompleteOption | MatchedSelectOption | SelectOption
-  selected?: boolean
-  multiple?: boolean
-  noLabelTranslate?: boolean
-  filter?: string
-  optionIconComponent?: ConcreteComponent
-  noSelectionIndicator?: boolean
-  noInteraction?: boolean
-}>()
+import type { CommonSelectOptionEmits, CommonSelectOptionProps } from './types.ts'
 
-const emit = defineEmits<{
-  select: [option: SelectOption]
-  next: [{ option: AutoCompleteOption; noFocus?: boolean }]
-}>()
+const props = defineProps<CommonSelectOptionProps>()
+
+const emit = defineEmits<CommonSelectOptionEmits>()
 
 const goToNextPage = (option: AutoCompleteOption, noFocus?: boolean) => {
   emit('next', { option, noFocus })
@@ -35,9 +26,12 @@ const label = computed(() => {
   const { option } = props
 
   if (props.noLabelTranslate && !option.labelPlaceholder)
-    return option.label || option.value.toString()
+    return option.label || i18n.t('%s (unknown)', option.value.toString())
 
-  return i18n.t(option.label, ...(option.labelPlaceholder || [])) || option.value.toString()
+  return (
+    i18n.t(option.label, ...(option.labelPlaceholder || [])) ||
+    i18n.t('%s (unknown)', option.value.toString())
+  )
 })
 
 const heading = computed(() => {
@@ -52,7 +46,14 @@ const heading = computed(() => {
   )
 })
 
-const OptionIconComponent = props.optionIconComponent
+// Match the displayed label; option.match offsets drift when it's translated.
+const highlightedLabel = computed(() => splitLabelByMatch(label.value, props.filter))
+
+const matchHighlightClasses = computed(() =>
+  props.option.disabled
+    ? 'bg-blue-200 dark:bg-gray-300'
+    : 'bg-blue-600 dark:bg-blue-900 group-hover:bg-blue-800 group-hover:text-white',
+)
 
 const locale = useLocaleStore()
 </script>
@@ -98,7 +99,7 @@ const locale = useLocaleStore()
       size="tiny"
       name="check2"
     />
-    <OptionIconComponent v-if="optionIconComponent" :option="option" />
+    <component :is="optionIconComponent" v-if="optionIconComponent" :option="option" />
     <CommonIcon
       v-else-if="option.icon"
       :name="option.icon"
@@ -110,7 +111,6 @@ const locale = useLocaleStore()
       class="shrink-0 fill-gray-100 group-hover:fill-black dark:fill-neutral-400 dark:group-hover:fill-white"
     />
     <div v-if="filter" v-tooltip="label + (heading ? ` – ${heading}` : '')" class="grow truncate">
-      <!-- eslint-disable vue/no-v-html -->
       <span
         :class="{
           'text-stone-200 dark:text-neutral-500':
@@ -119,8 +119,12 @@ const locale = useLocaleStore()
             option.disabled && (option as AutoCompleteOption).children?.length,
           'group-hover:text-white': option.disabled,
         }"
-        v-html="(option as MatchedSelectOption).matchedLabel"
-      />
+        >{{ highlightedLabel.before
+        }}<span v-if="highlightedLabel.matched" :class="matchHighlightClasses">{{
+          highlightedLabel.matched
+        }}</span
+        >{{ highlightedLabel.after }}</span
+      >
       <span
         v-if="heading"
         class="text-stone-200 dark:text-neutral-500"

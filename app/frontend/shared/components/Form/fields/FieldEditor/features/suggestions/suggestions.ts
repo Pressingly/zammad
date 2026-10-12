@@ -28,10 +28,19 @@ interface MentionOptions<T> {
 }
 
 enum Type {
-  'BeforeStart' = 'onBeforeStart',
-  'Start' = 'onStart',
-  'BeforeUpdate' = 'onBeforeUpdate',
-  'Update' = 'onUpdate',
+  BeforeStart = 'onBeforeStart',
+  Start = 'onStart',
+  BeforeUpdate = 'onBeforeUpdate',
+  Update = 'onUpdate',
+}
+
+let listboxIdCounter = 0
+
+const setEditorAttr = (editor: Editor, name: string, value: string | null) => {
+  const dom = editor?.view?.dom
+  if (!dom) return
+  if (value === null) dom.removeAttribute(name)
+  else dom.setAttribute(name, value)
 }
 
 let listboxIdCounter = 0

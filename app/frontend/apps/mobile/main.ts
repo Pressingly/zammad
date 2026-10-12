@@ -3,6 +3,7 @@
 import { createApp } from 'vue'
 
 import '#mobile/styles/main.css'
+import '#mobile/styles/custom/index.ts'
 
 import { initializeAppName } from '#shared/composables/useAppName.ts'
 import { useForceDesktop } from '#shared/composables/useForceDesktop.ts'
@@ -56,9 +57,10 @@ export default async function mountApp(): Promise<void> {
   initializeGlobalComponentStyles()
   initializeGlobalComponents(app)
   initializeGlobalProperties(app)
-  initializeGlobalDirectives(app)
   initializeMobileVisuals()
   initializeStoreSubscriptions()
+
+  initializeGlobalDirectives(app)
 
   const session = useSessionStore()
   const authentication = useAuthenticationStore()

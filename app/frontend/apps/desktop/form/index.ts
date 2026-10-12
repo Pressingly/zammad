@@ -19,6 +19,7 @@ import type {
 } from '#shared/types/form.ts'
 import type { ImportGlobEagerOutput } from '#shared/types/utils.ts'
 
+import KnowledgeBaseAnswerLinkForm from '#desktop/components/Form/fields/FieldEditor/features/knowledge-base-answer-link/KnowledgeBaseAnswerLinkForm.vue'
 import FieldEditorActionBar from '#desktop/components/Form/fields/FieldEditor/FieldEditorActionBar.vue'
 import FieldEditorActionMenu from '#desktop/components/Form/fields/FieldEditor/FieldEditorActionMenu.vue'
 import FieldEditorSuggestionList from '#desktop/components/Form/fields/FieldEditor/FieldEditorSuggestionList.vue'
@@ -32,7 +33,7 @@ const pluginModules: ImportGlobEagerOutput<FormKitPlugin> = import.meta.glob(
   { eager: true },
 )
 export const desktopFormFieldModules: ImportGlobEagerOutput<FormFieldTypeImportModules> =
-  import.meta.glob('../components/Form/fields/**/index.ts', { eager: true })
+  import.meta.glob('../components/Form/fields/*/index.ts', { eager: true })
 const themeExtensionModules: ImportGlobEagerOutput<FormThemeExtension> = import.meta.glob(
   './theme/global/extensions/*.ts',
   { eager: true },
@@ -59,13 +60,13 @@ export const initializeFormFields = () => {
   })
 
   initializeFieldLinkClasses({
-    container: 'formkit-link min-h-10 flex items-center',
+    container: 'min-h-10 flex items-center',
     base: 'ms-2',
-    link: 'w-min h-min min-h-min shrink-0 flex-nowrap items-center justify-center gap-x-1 border-0 font-normal shadow-none transition-transform duration-200 hover:outline-1 hover:outline-offset-1 hover:outline-blue-600 focus:outline-0 focus:hover:outline-1 focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-blue-800 focus:active:scale-[95%] dark:hover:outline-blue-900 text-blue-800 hover:text-blue-850 dark:hover:text-blue-600 text-base p-2 rounded-lg',
+    link: 'w-min h-min min-h-min shrink-0 flex-nowrap items-center justify-center gap-x-1 border-0 font-normal shadow-none transition-transform duration-200 hover:outline-1 hover:outline-offset-1 hover:outline-blue-600 focus:outline-0 focus:hover:outline-1 focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-blue-800 focus:active:scale-[95%] dark:hover:outline-blue-900 text-blue-800 hover:text-blue-850 dark:hover:text-blue-600 p-2 rounded-lg',
   })
 
   initializeFormGroupClasses({
-    container: 'form-group grid grid-cols-2 gap-y-2.5 gap-x-3',
+    container: 'form-group @container grid h-full grid-cols-2 gap-y-2.5 gap-x-3',
     help: 'text-xs',
     dirtyMark: 'form-group-mark-dirty',
     bottomMargin: 'mb-4 last:mb-0',
@@ -102,6 +103,9 @@ export const initializeFormFields = () => {
     actionBar: FieldEditorActionBar,
     actionMenu: FieldEditorActionMenu,
     suggestionList: FieldEditorSuggestionList,
+    // Not async loaded: the link form is handed to a `VueRenderer`, which renders nothing when the
+    //   component is still a promise at that point.
+    knowledgeBaseAnswerLinkForm: KnowledgeBaseAnswerLinkForm,
   })
 
   initializeFileClasses({

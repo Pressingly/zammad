@@ -28,6 +28,7 @@ export interface Props
    * Popover on bottom of target -> caret should point down
    */
   caretPointer?: 'up' | 'down'
+  arrowClasses?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -104,9 +105,10 @@ const { popover, popoverTarget, isOpen: popoverIsOpen, toggle, close } = usePopo
       v-bind="props"
       :id="targetId"
       ref="popoverTarget"
-      v-tooltip="$t(addonLabel || __('Context menu'))"
+      v-tooltip="addonLabel ? $t(addonLabel) : $t('Context menu')"
       class="rounded-s-none -outline-offset-1!"
       :class="[
+        arrowClasses,
         addonPaddingClasses,
         {
           'outline-1! outline-blue-800!': popoverIsOpen,

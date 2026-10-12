@@ -1,6 +1,7 @@
 # Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
 require 'rails_helper'
+require 'models/concerns/has_audit_logs_examples'
 require 'models/application_model_examples'
 require 'models/concerns/has_xss_sanitized_note_examples'
 require 'models/concerns/touches_perform_references_examples'
@@ -17,6 +18,8 @@ RSpec.describe Trigger, type: :model do
     { 'ticket.title'=>{ 'value'=>'triggered' } }
   end
 
+  it_behaves_like 'HasAuditLogs', update_attribute: 'name', update_value: 'Some updated name'
+
   it_behaves_like 'ApplicationModel', can_assets: { selectors: %i[condition perform] }
   it_behaves_like 'HasXssSanitizedNote', model_factory: :trigger
   it_behaves_like 'TouchesPerformReferences'
@@ -30,6 +33,42 @@ RSpec.describe Trigger, type: :model do
     it { is_expected.to validate_presence_of(:execution_condition_mode) }
     it { is_expected.to validate_inclusion_of(:activator).in_array(%w[action time]) }
     it { is_expected.to validate_inclusion_of(:execution_condition_mode).in_array(%w[selective always]) }
+
+    it 'rejects a tag action without a tag' do
+      trigger = build(:trigger, perform: { 'ticket.tags' => { 'operator' => 'add', 'value' => '' } })
+      expect(trigger).not_to be_valid
+    end
+
+    it 'accepts a tag action with a tag' do
+      trigger = build(:trigger, perform: { 'ticket.tags' => { 'operator' => 'add', 'value' => 'foo' } })
+      expect(trigger).to be_valid
+    end
+  end
+
+  describe '#search_index_attribute_lookup' do
+    let(:condition) do
+      { 'ticket.group_id' => { 'operator' => 'is', 'value' => %w[1 2], 'value_completion' => '' } }
+    end
+    let(:perform) do
+      { 'ticket.tags' => { 'operator' => 'add', 'value' => 'estest' } }
+    end
+
+    it 'adds a searchable text representation of the store columns', :aggregate_failures do
+      attributes = trigger.search_index_attribute_lookup
+
+      expect(attributes['condition_text']).to eq('ticket.group_id ticket group_id operator is value 1 2 value_completion')
+      expect(attributes['perform_text']).to eq('ticket.tags ticket tags operator add value estest')
+    end
+
+    context 'with an expert mode condition' do
+      let(:condition) do
+        { 'operator' => 'AND', 'conditions' => [ { 'name' => 'ticket.group_id', 'operator' => 'is', 'value' => %w[1] } ] }
+      end
+
+      it 'splits field names used as values' do
+        expect(trigger.search_index_attribute_lookup['condition_text']).to include('group_id')
+      end
+    end
   end
 
   describe 'Send-email triggers' do

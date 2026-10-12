@@ -4,20 +4,64 @@ class AI::Provider::OpenAI < AI::Provider
   include AI::Provider::Concerns::HandlesOpenAIMessages
   include AI::Provider::Concerns::HasConfigurableModel
   include AI::Provider::Concerns::HasModelsWithoutTemperatureFallback
+  include AI::Provider::Concerns::ListsModels
 
   OPENAI_API_BASE_URL = 'https://api.openai.com/v1'.freeze
 
-  # default model also in app/assets/javascripts/app/lib/app_post/ai_provider/open_ai.coffee
   DEFAULT_OPTIONS = {
     temperature:                0.1,
     model:                      'gpt-4.1',
-    embedding_model:            'text-embedding-3-small',
     models_without_temperature: ['gpt-5']
   }.freeze
 
-  EMBEDDING_SIZES = {
-    'text-embedding-3-small' => 1536
-  }.freeze
+  RECOMMENDED_EMBEDDING_MODEL = 'text-embedding-3-small'.freeze
+
+  def self.supports_embeddings?
+    true
+  end
+
+  def self.recommended_embedding_model
+    RECOMMENDED_EMBEDDING_MODEL
+  end
+
+  def self.check_temperature_support!(config, related_object: nil)
+    response = UserAgent.post(
+      "#{OPENAI_API_BASE_URL}/chat/completions",
+      {
+        model:       config[:model] || DEFAULT_OPTIONS[:model],
+        messages:    [{ role: 'user', content: 'Hello' }],
+        temperature: DEFAULT_OPTIONS[:temperature],
+        stream:      false,
+        store:       false,
+      },
+      {
+        **REQUEST_TIMEOUT_OPTIONS,
+        verify_ssl:   true,
+        bearer_token: config[:token],
+        json:         true,
+        log:          log_options(only_on_error: true, related_object:),
+      },
+    )
+
+    evaluate_temperature_probe!(response)
+  rescue CheckTemperatureSupportError
+    raise
+  rescue => e
+    raise CheckTemperatureSupportError, e.message
+  end
+
+  def self.models(config, related_object: nil)
+    response = model_list_response("#{OPENAI_API_BASE_URL}/models", related_object:, bearer_token: config[:token])
+
+    data = validate_response!(response)
+
+    # OpenAI reports nothing but the ids, so the capabilities come from the heuristics.
+    normalize_models(model_list_entries!(data), 'id') do |_entry, id|
+      model_descriptor(id:)
+    end
+  end
+
+  private
 
   def chat(prompt_system:, prompt_user:, prompt_image:)
     request_body = {
@@ -41,9 +85,7 @@ class AI::Provider::OpenAI < AI::Provider
         verify_ssl:   true,
         bearer_token: config[:token],
         json:         true,
-        log:          {
-          facility: 'AI::Provider',
-        },
+        log:          log_options,
       },
     )
 
@@ -57,7 +99,7 @@ class AI::Provider::OpenAI < AI::Provider
     response = UserAgent.post(
       "#{OPENAI_API_BASE_URL}/embeddings",
       {
-        model: options[:embedding_model] || DEFAULT_OPTIONS[:embedding_model],
+        model: embedding_model!,
         input: input,
       },
       {
@@ -65,71 +107,13 @@ class AI::Provider::OpenAI < AI::Provider
         verify_ssl:   true,
         bearer_token: config[:token],
         json:         true,
+        log:          log_options,
       },
     )
 
     data = validate_response!(response)
-    data['data'].first['embedding']
+    data['data'].pluck('embedding')
   end
-
-  def self.ping!(config)
-    response = UserAgent.get(
-      "#{OPENAI_API_BASE_URL}/models",
-      {},
-      {
-        **REQUEST_TIMEOUT_OPTIONS,
-        verify_ssl:   true,
-        bearer_token: config[:token],
-        json:         true,
-        log:          {
-          facility:          'AI::Provider',
-          log_only_on_error: true,
-        },
-      },
-    )
-
-    validate_response!(response)
-
-    nil
-  end
-
-  def self.check_temperature_support!(config)
-    response = UserAgent.post(
-      "#{OPENAI_API_BASE_URL}/chat/completions",
-      {
-        model:       config[:model] || DEFAULT_OPTIONS[:model],
-        messages:    [{ role: 'user', content: 'Hello' }],
-        temperature: DEFAULT_OPTIONS[:temperature],
-        stream:      false,
-        store:       false,
-      },
-      {
-        **REQUEST_TIMEOUT_OPTIONS,
-        verify_ssl:   true,
-        bearer_token: config[:token],
-        json:         true,
-        log:          {
-          facility:          'AI::Provider',
-          log_only_on_error: true,
-        },
-      },
-    )
-
-    return true if response.success?
-
-    data = JSON.parse(response.body)
-    message = data.dig('error', 'message')
-    type = data.dig('error', 'type')
-    param = data.dig('error', 'param')
-    code = data.dig('error', 'code')
-    return false if type == 'invalid_request_error' && param == 'temperature' && code == 'unsupported_value'
-
-    raise message
-  rescue => e
-    raise CheckTemperatureSupportError, e.message
-  end
-
-  private
 
   def specific_metadata
     {

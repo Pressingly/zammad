@@ -1,6 +1,8 @@
 # Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
 class Package < ApplicationModel
+  include HasAuditLogs
+
   @@root = Rails.root.to_s # rubocop:disable Style/ClassVars
 
 =begin
@@ -48,30 +50,6 @@ returns:
     return nil if issues.blank?
 
     issues
-  end
-
-=begin
-
-install all packages located under auto_install/*.zpm
-
-  Package.auto_install
-
-=end
-
-  def self.auto_install
-    path = "#{@@root}/auto_install/"
-    return if !File.exist?(path)
-
-    data = []
-    Dir.foreach(path) do |entry|
-      if entry.include?('.zpm') && entry !~ %r{^\.}
-        data.push entry
-      end
-    end
-    data.each do |file|
-      install(file: "#{path}/#{file}")
-    end
-    data
   end
 
 =begin
@@ -214,6 +192,11 @@ or
 
   package = Package.install(string: zpm_as_string)
 
+Optionally, writing the package files to the file system can be skipped, e.g. in
+container environments where the files are already part of the image:
+
+  package = Package.install(file: '/path/to/package.zpm', write_files: false)
+
 returns
 
   package # record of newly created package
@@ -225,6 +208,8 @@ subsequently in a separate step.
 =end
 
   def self.install(data)
+    write_files = data.fetch(:write_files, true)
+
     if data[:file]
       json    = _read_file(data[:file], true)
       package = JSON.parse(json)
@@ -263,6 +248,8 @@ subsequently in a separate step.
         version:            package_db.version,
         migration_not_down: true,
         reinstall:          data[:reinstall],
+        replacement:        true,
+        remove_files:       write_files,
       )
     end
 
@@ -281,17 +268,7 @@ subsequently in a separate step.
       end
 
       # write files
-      package['files'].each do |file|
-        if !allowed_file_path?(file['location'])
-          raise "Can't create file, because of not allowed file location: #{file['location']}!"
-        end
-
-        ensure_no_duplicate_files!(package_db.name, file['location'])
-
-        permission = file['permission'] || '644'
-        content    = Base64.decode64(file['content'])
-        _write_file(file['location'], permission, content)
-      end
+      _install_files(package_db, package['files'], write_files)
 
       # update package state
       package_db.reload
@@ -300,6 +277,153 @@ subsequently in a separate step.
     end
 
     package_db
+  end
+
+  def self._install_files(package_db, files, write_files)
+    files.each do |file|
+      if !allowed_file_path?(file['location'])
+        raise "Can't create file, because of not allowed file location: #{file['location']}!"
+      end
+
+      ensure_no_duplicate_files!(package_db.name, file['location'])
+
+      next if !write_files
+
+      permission = file['permission'] || '644'
+      content    = Base64.decode64(file['content'])
+      _write_file(file['location'], permission, content)
+    end
+  end
+
+=begin
+
+install or update all packages located in the given directory, in dependency order
+
+  Package.install_dir('packages/install')
+
+Optionally without writing the package files to the file system (see Package.install):
+
+  Package.install_dir('packages/install', write_files: false)
+
+Already installed packages with the same or a newer version are skipped.
+Migrations will not be executed (see Package.install).
+
+=end
+
+  def self.install_dir(directory, write_files: true)
+    _sort_by_dependencies(_packages_in_dir(directory)).each do |package|
+      installed = Package.find_by(name: package['name'])
+
+      if installed && Gem::Version.new(installed.version) >= Gem::Version.new(package['version'])
+        logger.info "Package #{package['name']}-#{package['version']} is already installed."
+        next
+      end
+
+      logger.info "Installing package #{package['name']}-#{package['version']}..."
+      install(file: package['zpm_file'], write_files: write_files)
+
+      # Dependency and duplicate file checks of subsequent packages must see this package.
+      Auth::RequestCache.clear
+    end
+  end
+
+=begin
+
+uninstall all packages located in the given directory, in reverse dependency order
+
+  Package.uninstall_dir('packages/uninstall')
+
+Optionally without removing the package files from the file system (see Package.uninstall):
+
+  Package.uninstall_dir('packages/uninstall', remove_files: false)
+
+Packages which are not installed are skipped. The installed version is uninstalled,
+regardless of the version of the .zpm file in the directory.
+Down migrations are executed (see Package.uninstall).
+
+=end
+
+  def self.uninstall_dir(directory, remove_files: true)
+    _sort_by_dependencies(_packages_in_dir(directory)).reverse_each do |package|
+      installed = Package.find_by(name: package['name'])
+
+      if !installed
+        logger.info "Package #{package['name']} is not installed."
+        next
+      end
+
+      logger.info "Uninstalling package #{installed.name}-#{installed.version}..."
+      uninstall(name: installed.name, version: installed.version, remove_files: remove_files)
+
+      # Dependency checks of subsequent packages must no longer see this package.
+      Auth::RequestCache.clear
+    end
+  end
+
+  def self._packages_in_dir(directory)
+    Rails.root.join(directory).glob('*.zpm').map do |zpm_file|
+      JSON.parse(File.read(zpm_file)).merge('zpm_file' => zpm_file.to_s)
+    end
+  end
+
+=begin
+
+verify that the addon packages staged in a container image are fully applied:
+packages/install installed or updated, packages/uninstall uninstalled and all
+package migrations executed - raises otherwise
+
+  Package.check_staged_packages_applied!
+
+Containers wait for the init container with this check, so that the application
+is not served while addon packages or their migrations are still being applied.
+
+=end
+
+  def self.check_staged_packages_applied!
+    raise 'Staged package installations are pending!' if _pending_staged_installations? # rubocop:disable Zammad/DetectTranslatableString
+    raise 'Staged package uninstallations are pending!' if _pending_staged_uninstallations? # rubocop:disable Zammad/DetectTranslatableString
+    raise 'Package migrations are pending!' if _pending_package_migrations? # rubocop:disable Zammad/DetectTranslatableString
+
+    true
+  end
+
+  def self._pending_staged_installations?
+    _packages_in_dir('packages/install').any? { |package| _staged_install_pending?(package) }
+  end
+
+  def self._pending_staged_uninstallations?
+    _packages_in_dir('packages/uninstall').any? { |package| Package.exists?(name: package['name']) }
+  end
+
+  def self._pending_package_migrations?
+    Package.all.any? { |package| Package::Migration.pending?(package.name) }
+  end
+
+  def self._staged_install_pending?(package)
+    installed = Package.find_by(name: package['name'])
+    return true if !installed
+
+    Gem::Version.new(installed.version) < Gem::Version.new(package['version'])
+  end
+
+  def self._sort_by_dependencies(packages)
+    sorted_packages    = []
+    remaining_packages = packages
+
+    while remaining_packages.any?
+      ready_packages = remaining_packages.select do |package|
+        (package['dependencies'] || {}).keys.none? do |dependency_name|
+          remaining_packages.any? { |candidate| candidate['name'] == dependency_name }
+        end
+      end
+
+      raise "Circular dependencies between packages: #{remaining_packages.pluck('name').join(', ')}!" if ready_packages.empty?
+
+      sorted_packages    += ready_packages
+      remaining_packages -= ready_packages
+    end
+
+    sorted_packages
   end
 
   def self.ensure_dependencies_install!(dependencies)
@@ -343,18 +467,66 @@ subsequently in a separate step.
     end
   end
 
-  def self.app_frontend_files?
-    Auth::RequestCache.fetch_value('Package/app_frontend_files') do
-      Package.all_files.values.flatten.any? { |f| f.starts_with?('app/frontend') }
-    end
-  end
-
   def self.gem_files?
     Dir['Gemfile.local.*'].present?
   end
 
   def self.app_package_installation?
     File.exist?('/usr/bin/zammad')
+  end
+
+  def self.api_token
+    ENV['PACKAGES_TOKEN'] || Setting.get('packages_token')
+  end
+
+  def self.api_version_name
+    Rails.root.join('VERSION').read.chomp.split('.').tap { |row| row[2] = 'x' }[0..2].join('.')
+  end
+
+  def self.api_packages(params)
+    return [] if api_token.blank?
+
+    cache_key = "PackagesController/api_packages/#{api_token}/#{params.to_json}"
+    cache     = Rails.cache.read(cache_key)
+    return cache if !cache.nil?
+
+    zip_file = api_zip_packages(params)
+    return [] if zip_file.blank?
+
+    result = []
+    begin
+      Zip::File.open(zip_file.path) do |zip|
+        zip.sort.each do |entry|
+          next if !entry.name.end_with?('.zpm')
+
+          content = entry.get_input_stream.read
+          data = JSON.parse(content)
+          result << data
+        end
+      end
+    ensure
+      zip_file.close!
+    end
+
+    Rails.cache.write(cache_key, result, expires_in: 1.hour)
+    result
+  end
+
+  def self.api_packages_hash(params)
+    api_packages(params).index_by { |row| row['name'] }
+  end
+
+  def self.api_zip_packages(params)
+    require 'zip'
+
+    response = UserAgent.get('https://support.zammad.com/api/v1/addon_releases/download/organization', params, { bearer_token: api_token })
+    return if !response.code.starts_with?('2')
+
+    zip_file = Tempfile.new
+    zip_file.binmode
+    zip_file.write(response.body)
+    zip_file.rewind
+    zip_file
   end
 
 =begin
@@ -390,6 +562,11 @@ or
 
   package = Package.uninstall(string: zpm_as_string)
 
+Optionally, removing the package files from the file system can be skipped, e.g. in
+container environments where the files are part of the image:
+
+  package = Package.uninstall(name: 'package', version: '0.1.1', remove_files: false)
+
 returns
 
   package # record of newly created package
@@ -405,7 +582,8 @@ returns
       package   = JSON.parse(json_file)
     end
 
-    ensure_dependencies_uninstall!(package['name']) if !data[:reinstall]
+    # on reinstall/replacement the package stays available to dependent packages
+    ensure_dependencies_uninstall!(package['name']) if !data[:reinstall] && !data[:replacement]
 
     # down migrations
     if !data[:migration_not_down]
@@ -417,7 +595,7 @@ returns
       version: package['version'],
     )
 
-    if record.state == 'installed'
+    if record.state == 'installed' && data.fetch(:remove_files, true)
       package['files'].each do |file|
         permission = file['permission'] || '644'
         content    = Base64.decode64(file['content'])

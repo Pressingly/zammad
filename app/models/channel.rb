@@ -3,6 +3,10 @@
 class Channel < ApplicationModel
   include Channel::Area::Whatsapp
   include CanSensitiveAssets
+  include HasAuditLogs
+
+  self.audit_log_name_attribute = :area
+  self.audit_log_attributes_ignored = %i[status_in status_out last_log_in last_log_out preferences]
 
   SENSITIVE_FIELDS = [
     # Classic Email (IMAP, POP3, SMTP with the plain text password)
@@ -11,6 +15,9 @@ class Channel < ApplicationModel
     # XOAUTH2 email (Google, Microsoft IMAP&Graph)
     # options.auth.access_token is also used for Facebhook (non-email)
     'options.auth.access_token', 'options.auth.refresh_token', 'options.auth.client_secret',
+
+    # Facebook page tokens, stored as an array of hashes
+    'options.pages[].access_token',
 
     # SMS (MessageBird, Masenversand, Twilio)
     'options.token',
@@ -212,10 +219,11 @@ get instance of channel driver
 
     return if new_record?
 
-    save!
+    # the automatic token refresh is not an admin action and must not flood the audit log (#6402)
+    AuditLog.suspend { save! }
   rescue => e
     logger.error e
-    raise "Failed to refresh XOAUTH2 access_token of provider '#{options[:auth][:provider]}': #{e.message}"
+    raise XOAuth2RefreshError, "Failed to refresh XOAUTH2 access_token of provider '#{options[:auth][:provider]}': #{e.message}"
   end
 
   # Marks the channel as experiencing issues
@@ -248,6 +256,11 @@ get instance of channel driver
   def mark_as_error_message(adapter, e)
     "#{adapter.to_classname}: #{e.message} (#{e.class})"
   end
+
+  # Raised when the access token of an XOAUTH2 channel can not be renewed,
+  #   which makes the channel unusable until an admin reconnects it. Kept a
+  #   RuntimeError for backwards compatibility.
+  class XOAuth2RefreshError < RuntimeError; end
 
   class DeliveryError < StandardError
     attr_reader :original_error

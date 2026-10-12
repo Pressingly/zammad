@@ -6,6 +6,7 @@ import { delay } from 'lodash-es'
 import {
   computed,
   nextTick,
+  onBeforeUnmount,
   onMounted,
   ref,
   type Ref,
@@ -104,7 +105,9 @@ const setHeaderWidths = (reset?: boolean) => {
     shouldReset = true
 
   props.tableAttributes.forEach((tableAttribute) => {
-    const header = document.getElementById(`${tableAttribute.name}-header`)
+    const header = tableElement.value?.querySelector<HTMLElement>(
+      `[id="${tableAttribute.name}-header"]`,
+    )
     if (!header) return
 
     if (shouldReset) {
@@ -139,7 +142,9 @@ const calculateHeaderWidths = () => {
   const headerWidths: Record<string, number> = {}
 
   props.tableAttributes.forEach((tableAttribute) => {
-    const headerWidth = document.getElementById(`${tableAttribute.name}-header`)?.clientWidth
+    const headerWidth = tableElement.value?.querySelector<HTMLElement>(
+      `[id="${tableAttribute.name}-header"]`,
+    )?.clientWidth
 
     if (!headerWidth) return
 
@@ -148,6 +153,8 @@ const calculateHeaderWidths = () => {
 
   storeHeaderWidths(headerWidths)
 }
+
+let calculateHeaderWidthsTimer: number | undefined
 
 const initializeHeaderWidths = (storageKeyId?: string) => {
   if (storageKeyId) {
@@ -158,14 +165,22 @@ const initializeHeaderWidths = (storageKeyId?: string) => {
 
   nextTick(() => {
     setHeaderWidths()
-    delay(calculateHeaderWidths, 500)
+
+    if (calculateHeaderWidthsTimer) clearTimeout(calculateHeaderWidthsTimer)
+    calculateHeaderWidthsTimer = delay(calculateHeaderWidths, 500)
   })
 }
 
 const resetHeaderWidths = () => {
   setHeaderWidths(true)
-  delay(calculateHeaderWidths, 500)
+
+  if (calculateHeaderWidthsTimer) clearTimeout(calculateHeaderWidthsTimer)
+  calculateHeaderWidthsTimer = delay(calculateHeaderWidths, 500)
 }
+
+onBeforeUnmount(() => {
+  clearTimeout(calculateHeaderWidthsTimer)
+})
 
 // Selection state
 const selectAllActive = shallowRef(false)
@@ -276,7 +291,7 @@ onMounted(() => {
 
 useEventListener('resize', () => initializeHeaderWidths())
 
-useOnEmitter('main-sidebar-transition', () => initializeHeaderWidths())
+useOnEmitter('primary-sidebar-transition', () => initializeHeaderWidths())
 </script>
 
 <template>
@@ -302,7 +317,7 @@ useOnEmitter('main-sidebar-transition', () => initializeHeaderWidths())
         :id="`${tableAttribute.name}-header`"
         :key="tableAttribute.name"
         scope="col"
-        class="relative h-10 p-2.5 text-xs"
+        class="relative h-10 px-2.5 py-1 text-xs"
         :class="[tableAttribute.headerPreferences?.headerClass]"
         :aria-label="$t(tableAttribute.label, ...(tableAttribute.labelPlaceholder || []))"
         :aria-sort="
@@ -318,7 +333,7 @@ useOnEmitter('main-sidebar-transition', () => initializeHeaderWidths())
           <slot :name="`column-header-${tableAttribute.name}`" :attribute="tableAttribute">
             <!-- eslint-disable vuejs-accessibility/no-static-element-interactions,vuejs-accessibility/mouse-events-have-key-events-->
             <div
-              v-tooltip.noAriaLabel="getToolbarLabel(tableAttribute)"
+              v-tooltip="getToolbarLabel(tableAttribute)"
               class="flex items-center gap-1"
               :class="[
                 cellAlignmentClasses[tableAttribute.columnPreferences?.alignContent || 'left'],

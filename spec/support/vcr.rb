@@ -18,8 +18,8 @@ VCR.configure do |config|
   config.ignore_request do |request|
     uri = URI(request.uri)
 
-    next true if VCR_IGNORE_MATCHING_HOSTS.any?     { |elem| uri.host.include? elem }
-    next true if VCR_IGNORE_MATCHING_REGEXPS.any?   { |elem| uri.host.match? elem }
+    next true if VCR_IGNORE_MATCHING_HOSTS.any? { |elem| uri.host.include? elem }
+    next true if VCR_IGNORE_MATCHING_REGEXPS.any? { |elem| uri.host.match? elem }
   end
 
   config.register_request_matcher(:oauth_headers) do |r1, r2|
@@ -39,6 +39,15 @@ module RSpec
 
     Check `git status` to see if a new VCR cassette has been generated.
     If so, rename the old cassette to replace the new one and try again.
+
+  MSG
+
+  VCR_MISSING_INTEGRATION_ADVISORY = <<~MSG.freeze
+
+    *** VCR ADVISORY ***
+    This spec uses VCR cassettes but is missing the `integration: true` metadata.
+    When CI_IGNORE_CASSETTES=1 is set, this spec will NOT run in live mode and will keep using the cassette.
+    If it should run live, add `integration: true` to the spec metadata.
 
   MSG
 
@@ -86,13 +95,17 @@ RSpec.configure do |config|
     Setting.set('storage_provider', 'DB') if Setting.get('storage_provider') == 'S3'
 
     # Perform live integration tests without using VCR cassettes if CI_IGNORE_CASSETTES is set.
-    if example.metadata[:integration] && %w[1 true].include?(ENV['CI_IGNORE_CASSETTES'])
+    ignore_cassettes = %w[1 true].include?(ENV['CI_IGNORE_CASSETTES'])
+
+    if example.metadata[:integration] && ignore_cassettes
       next VCR.turned_off(ignore_cassettes: true) do
         WebMock.disable!
         example.run
       ensure
         WebMock.enable!
       end
+    elsif !example.metadata.key?(:integration) && ignore_cassettes
+      RSpec.configuration.reporter.message("#{example.location}: #{RSpec::VCR_MISSING_INTEGRATION_ADVISORY}")
     end
 
     vcr_options = Array(example.metadata[:use_vcr])

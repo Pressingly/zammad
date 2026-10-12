@@ -24,7 +24,8 @@ RSpec.describe Gql::Mutations::Ticket::AIAssistance::EnqueueKnowledgeBaseAnswer,
     let(:variables) { { ticketId: gql.id(ticket) } }
 
     before do
-      allow(KnowledgeBase).to receive(:first).and_return(knowledge_base)
+      # The mutation resolves the single knowledge base itself, so it has to exist before the call.
+      knowledge_base
 
       create(:knowledge_base_category, knowledge_base:) if with_category && knowledge_base.present?
 
@@ -52,6 +53,14 @@ RSpec.describe Gql::Mutations::Ticket::AIAssistance::EnqueueKnowledgeBaseAnswer,
 
     context 'when no knowledge base exists' do
       let(:knowledge_base) { nil }
+
+      it 'returns an error' do
+        expect(gql.result.error_message).to include('Knowledge base is unavailable or not properly configured.')
+      end
+    end
+
+    context 'when the knowledge base is inactive' do
+      let(:knowledge_base) { create(:knowledge_base, active: false) }
 
       it 'returns an error' do
         expect(gql.result.error_message).to include('Knowledge base is unavailable or not properly configured.')

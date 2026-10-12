@@ -41,7 +41,7 @@ RSpec.describe Gql::Mutations::User::Signup, type: :graphql do
       end
     end
 
-    context 'with enabled user signup' do
+    context 'with enabled user signup', performs_jobs: true do
       before do
         Setting.set('user_create_account', true)
       end
@@ -53,7 +53,7 @@ RSpec.describe Gql::Mutations::User::Signup, type: :graphql do
           message = params[:body]
         end
 
-        gql.execute(query, variables: variables)
+        perform_enqueued_jobs { gql.execute(query, variables: variables) }
         expect(gql.result.data).to eq({ 'success' => true, 'errors' => nil })
         expect(User.find_by(email: 'bender@futurama.fiction')).to be_present
         expect(message).to include("<a href=\"http://zammad.example.com/desktop/signup/verify/#{Token.last[:token]}\">")
@@ -114,11 +114,53 @@ RSpec.describe Gql::Mutations::User::Signup, type: :graphql do
           allow(NotificationFactory::Mailer).to receive(:deliver) do |params|
             message = params[:body]
           end
-          gql.execute(query, variables: variables)
+          perform_enqueued_jobs { gql.execute(query, variables: variables) }
 
           expect(gql.result.data).to eq({ 'success' => true, 'errors' => nil })
           expect(message).to include('You or someone else tried to sign up with this email address.')
           expect(message).to include("<a href=\"http://zammad.example.com/desktop/reset-password/verify/#{Token.last[:token]}\">")
+        end
+      end
+
+      context 'when trying to set additional attributes' do
+        let(:variables) do
+          {
+            input: {
+              email:                 'bender@futurama.fiction',
+              firstname:             'Bender',
+              lastname:              'Rodriguez',
+              password:              'IloveBender1337',
+              objectAttributeValues: [{ name: 'verified', value: true }],
+            }
+          }
+        end
+
+        it 'rejects the request, because the field does not exist', :aggregate_failures do
+          gql.execute(query, variables: variables)
+
+          expect(gql.result.error_message).to include('objectAttributeValues')
+          expect(User.find_by(email: 'bender@futurama.fiction')).to be_nil
+        end
+      end
+
+      context 'when trying to claim the login of another account' do
+        let(:variables) do
+          {
+            input: {
+              email:     'bender@futurama.fiction',
+              firstname: 'Bender',
+              lastname:  'Rodriguez',
+              password:  'IloveBender1337',
+              login:     'fry@futurama.fiction',
+            }
+          }
+        end
+
+        it 'rejects the request, because the field does not exist', :aggregate_failures do
+          gql.execute(query, variables: variables)
+
+          expect(gql.result.error_message).to include('login')
+          expect(User.find_by(email: 'bender@futurama.fiction')).to be_nil
         end
       end
 

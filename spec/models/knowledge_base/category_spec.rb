@@ -2,6 +2,7 @@
 
 require 'rails_helper'
 require 'models/concerns/checks_kb_client_notification_examples'
+require 'models/concerns/has_translations_examples'
 require 'models/contexts/factory_context'
 
 RSpec.describe KnowledgeBase::Category, current_user_id: 1, type: :model do
@@ -13,6 +14,85 @@ RSpec.describe KnowledgeBase::Category, current_user_id: 1, type: :model do
 
   it { is_expected.to validate_presence_of(:category_icon) }
   it { is_expected.not_to validate_presence_of(:parent_id) }
+  it { is_expected.to validate_inclusion_of(:category_sorting_mode).in_array(KnowledgeBase::SORTING_MODES) }
+  it { is_expected.to validate_inclusion_of(:answer_sorting_mode).in_array(KnowledgeBase::SORTING_MODES) }
+
+  # What both lists hold before anything is inherited into them, and what the factory's `manual`
+  #   pins are measured against: the guards in #inherit_sorting_modes can see those pins only
+  #   because they differ from this, so a default back on `manual` would quietly turn every pinned
+  #   factory category into an inheriting one — and the order-dependent examples all over the suite
+  #   would change meaning without one of them failing.
+  it 'starts both of its lists on the default mode', :aggregate_failures do
+    expect(described_class.new).to have_attributes(
+      category_sorting_mode: KnowledgeBase::DEFAULT_SORTING_MODE,
+      answer_sorting_mode:   KnowledgeBase::DEFAULT_SORTING_MODE
+    )
+  end
+
+  describe 'sorting mode inheritance' do
+    # The factory pins both lists to `manual` for the suite's order-dependent examples, so every
+    #   example here says out loud what the node above it is set to — and the inheriting category
+    #   is built without the factory, whose pins would stand in for the modes under test.
+    let(:knowledge_base) { create(:knowledge_base, category_sorting_mode: 'last_update') }
+
+    def inheriting_category(**attributes)
+      described_class.create!(knowledge_base:, category_icon: 'f04b', **attributes)
+    end
+
+    context 'when created under a parent category' do
+      let(:parent) do
+        create(:knowledge_base_category, knowledge_base:, category_sorting_mode: 'manual', answer_sorting_mode: 'last_update')
+      end
+
+      # The parent's category mode differs from the knowledge base's, so the child taking it proves
+      #   it inherited from the list it landed in rather than from the root.
+      it 'follows the list it lands in, per list' do
+        expect(inheriting_category(parent:))
+          .to have_attributes(category_sorting_mode: 'manual', answer_sorting_mode: 'last_update')
+      end
+    end
+
+    context 'when created at the top level' do
+      it 'takes its category mode from the knowledge base' do
+        expect(inheriting_category.category_sorting_mode).to eq('last_update')
+      end
+
+      # The root lists categories only, so there is no answer mode above it to inherit — deriving
+      #   one from its *category* mode would conflate two lists the model keeps apart.
+      it 'takes the default mode for its answers' do
+        expect(inheriting_category.answer_sorting_mode).to eq(KnowledgeBase::DEFAULT_SORTING_MODE)
+      end
+    end
+
+    it 'keeps modes it was created with' do
+      parent = create(:knowledge_base_category, knowledge_base:, category_sorting_mode: 'manual', answer_sorting_mode: 'manual')
+
+      expect(inheriting_category(parent:, category_sorting_mode: 'last_update', answer_sorting_mode: 'last_update'))
+        .to have_attributes(category_sorting_mode: 'last_update', answer_sorting_mode: 'last_update')
+    end
+
+    # #inherit_sorting_modes tracks whether the caller assigned the attribute itself, separately
+    #   from dirty tracking, so an explicit assignment equal to the column default
+    #   (KnowledgeBase::DEFAULT_SORTING_MODE) is still distinguishable from no assignment at all —
+    #   and wins over the inherited mode, the same as any other explicit value.
+    it 'keeps an explicitly assigned default mode instead of inheriting' do
+      parent = create(:knowledge_base_category, knowledge_base:, category_sorting_mode: 'manual')
+
+      expect(inheriting_category(parent:, category_sorting_mode: KnowledgeBase::DEFAULT_SORTING_MODE).category_sorting_mode)
+        .to eq(KnowledgeBase::DEFAULT_SORTING_MODE)
+    end
+
+    # Inheritance is a create-time default: an editor either chose the modes or accepted them, and
+    #   re-deriving on a move would silently rewrite that.
+    it 'keeps its modes when moved under a different parent' do
+      category   = create(:knowledge_base_category, knowledge_base:, category_sorting_mode: 'manual', answer_sorting_mode: 'manual')
+      new_parent = create(:knowledge_base_category, knowledge_base:, category_sorting_mode: 'last_update', answer_sorting_mode: 'last_update')
+
+      category.update!(parent: new_parent)
+
+      expect(category.reload).to have_attributes(category_sorting_mode: 'manual', answer_sorting_mode: 'manual')
+    end
+  end
 
   it { is_expected.to have_many(:answers) }
   it { is_expected.to have_many(:children) }
@@ -69,6 +149,45 @@ RSpec.describe KnowledgeBase::Category, current_user_id: 1, type: :model do
       end
     end
 
+    context 'when fetching all children (excluding self)' do
+      it 'root category does not include itself' do
+        expect(kb_category_with_tree.all_children).not_to include(kb_category_with_tree)
+      end
+
+      it 'root category has all descendants matching self_with_children minus itself' do
+        expect(kb_category_with_tree.all_children).to match_array(knowledge_base.categories - [kb_category_with_tree])
+      end
+
+      it 'grandchild category has one fewer entry than self_with_children (self excluded)' do
+        expect(grandchild_category.all_children.count).to eq(grandchild_category.self_with_children.count - 1)
+      end
+    end
+
+    context 'when fetching all knowledge base children' do
+      # The CTE's cycle-guard path column doubles as ancestry information: an array of category
+      # ids from root down to and including the row itself, flowing through on every row without
+      # a custom SELECT (which would break aggregation such as `.count`).
+      let(:categories_with_path) { knowledge_base.all_children.index_by(&:id) }
+
+      it 'root category path is just itself' do
+        expect(categories_with_path[kb_category_with_tree.id]['recursive_tree_path']).to eq([kb_category_with_tree.id])
+      end
+
+      it 'child category path is root then itself' do
+        expect(categories_with_path[child_category.id]['recursive_tree_path']).to eq([kb_category_with_tree.id, child_category.id])
+      end
+
+      it 'grandchild category path is root, child, then itself' do
+        expect(categories_with_path[grandchild_category.id]['recursive_tree_path']).to eq(
+          [kb_category_with_tree.id, child_category.id, grandchild_category.id]
+        )
+      end
+
+      it 'stays aggregatable since no custom SELECT is chained on' do
+        expect(knowledge_base.all_children.count).to eq(knowledge_base.categories.count)
+      end
+    end
+
     context 'when fetchching self with children ids' do
       it 'root category has multiple layers children ids' do
         expect(kb_category_with_tree.self_with_children_ids).to match_array(knowledge_base.category_ids)
@@ -98,6 +217,110 @@ RSpec.describe KnowledgeBase::Category, current_user_id: 1, type: :model do
 
       it 'child category is not a parent of root category' do
         expect(kb_category_with_tree).not_to be_self_parent(grandchild_category)
+      end
+    end
+
+    context 'when parent_id contains a cycle (bypassing validations)' do
+      # There is no DB constraint preventing a cycle in parent_id, only the
+      # `cannot_be_child_of_parent` validation, which is bypassed here via `update_column` to
+      # simulate e.g. a direct SQL update or a race condition. #self_with_children and
+      # #self_with_parents must terminate safely (not hang or raise SystemStackError) thanks to
+      # the `path` cycle guard in their recursive CTEs.
+      #
+      # This makes root a child of grandchild, closing a loop: root -> grandchild -> child -> root.
+      before do
+        kb_category_with_tree.update_column(:parent_id, grandchild_category.id)
+      end
+
+      it 'self_with_children terminates and still returns every reachable node exactly once' do
+        expect(Timeout.timeout(5) { child_category.self_with_children.map(&:id) }).to match_array(knowledge_base.category_ids)
+      end
+
+      it 'self_with_parents terminates, stopping as soon as the cycle is closed' do
+        expect(Timeout.timeout(5) { kb_category_with_tree.self_with_parents.map(&:id) }).to eq(
+          [kb_category_with_tree.id, grandchild_category.id, child_category.id]
+        )
+      end
+
+      it 'self_with_children_ids terminates and returns every reachable id exactly once' do
+        # The per-level loop it used before this branch had no iteration bound, so a cycle made it
+        # loop forever issuing one query per level.
+        expect(Timeout.timeout(5) { child_category.self_with_children_ids }).to match_array(knowledge_base.category_ids)
+      end
+
+      it 'rejects attaching a new category beneath a cycle member instead of silently joining the corrupt component' do
+        fresh = build(:knowledge_base_category, knowledge_base: knowledge_base, parent: child_category)
+
+        expect(Timeout.timeout(5) { fresh.tap(&:valid?).errors[:parent_id] }).to include('is part of a circular reference')
+      end
+
+      it 'validating a cycle member itself reports errors instead of raising SystemStackError' do
+        # `self_parent?` used to walk the parent chain with plain Ruby recursion, so validating any
+        # category inside a cycle (even a save touching an unrelated attribute) crashed instead of
+        # failing validation.
+        expect(Timeout.timeout(5) { kb_category_with_tree.valid? }).to be(false)
+      end
+    end
+
+    context 'when nesting beyond the allowed depth (psql)' do
+      # Stub the limit down so a real 100-level tree is not needed; the arithmetic under test is
+      # identical. The tree fixture itself reaches depth 3 (root -> child -> grandchild -> leaf),
+      # so 4 is the lowest stub the fixture can be created under, making leaves the deepest
+      # allowed level and grandchild_category the deepest valid parent target.
+      before do
+        allow(described_class).to receive(:max_depth).and_return(4)
+      end
+
+      let(:leaf)    { grandchild_category.children.sorted.first }
+      let(:sibling) { kb_category_with_tree.children.sorted.first }
+
+      it 'rejects creating a category below the deepest allowed level' do
+        fresh = build(:knowledge_base_category, knowledge_base: knowledge_base)
+        fresh.parent = leaf
+
+        expect(fresh.tap(&:valid?).errors[:parent_id]).to include('would exceed the allowed nesting depth')
+      end
+
+      it 'allows creating a category at the deepest allowed level' do
+        fresh = build(:knowledge_base_category, knowledge_base: knowledge_base)
+        fresh.parent = grandchild_category
+
+        expect(fresh.tap(&:valid?).errors[:parent_id]).to be_empty
+      end
+
+      it 'rejects moving a subtree whose descendants would end up beyond the limit' do
+        # child_category itself would sit at depth 2, fine — but it carries a subtree two more
+        # levels deep, whose leaves would land at depth 4, past the stubbed limit.
+        child_category.parent = sibling
+
+        expect(child_category.tap(&:valid?).errors[:parent_id]).to include("would push this category's children beyond the allowed nesting depth")
+      end
+
+      it 'still saves an unrelated change on an existing too-deep category' do
+        # Data beyond the limit may pre-exist (imports, older versions); only parent changes are
+        # policed, so such categories must not become read-only.
+        deep_leaf = create(:knowledge_base_category, knowledge_base: knowledge_base).tap do |category|
+          category.update_column(:parent_id, leaf.id)
+        end
+
+        expect(deep_leaf.reload.update(position: 5)).to be(true)
+      end
+    end
+
+    context 'when parent_id references a deleted or nonexistent category' do
+      # Validations must pass this case through untouched (no NoMethodError from walking a nil
+      # parent association) so the save reaches the foreign-key constraint, which raises
+      # ActiveRecord::InvalidForeignKey — the error controllers map to 422.
+      let(:orphaned) do
+        build(:knowledge_base_category, knowledge_base: knowledge_base).tap { |category| category.parent_id = 99_999_999 }
+      end
+
+      it 'does not raise during validation' do
+        expect { orphaned.valid? }.not_to raise_error
+      end
+
+      it 'still hits the foreign-key constraint on save' do
+        expect { orphaned.save!(validate: false) }.to raise_error(ActiveRecord::InvalidForeignKey)
       end
     end
   end
@@ -137,7 +360,7 @@ RSpec.describe KnowledgeBase::Category, current_user_id: 1, type: :model do
 
     include_context 'basic Knowledge Base'
 
-    let(:user) { create(:agent) }
+    let(:user)                    { create(:agent) }
     let(:another_category)        { create(:knowledge_base_category, knowledge_base: knowledge_base) }
     let(:another_category_answer) { create(:knowledge_base_answer, :internal, category: another_category) }
 
@@ -175,6 +398,52 @@ RSpec.describe KnowledgeBase::Category, current_user_id: 1, type: :model do
     end
   end
 
+  # The knowledge base asset cache survives its own `updated_at`, so nothing but this invalidation
+  # keeps `category_ids` in step — and the admin interface decides from that list whether an icon
+  # set switch has category icons to reset.
+  describe 'knowledge base asset cache' do
+    let(:knowledge_base) { create(:knowledge_base) }
+
+    def cached_category_ids
+      knowledge_base.attributes_with_association_ids['category_ids']
+    end
+
+    it 'lists a newly created category' do
+      cached_category_ids # cache the state without any category
+
+      category = create(:knowledge_base_category, knowledge_base: knowledge_base)
+
+      expect(cached_category_ids).to include(category.id)
+    end
+
+    it 'drops a destroyed category' do
+      category = create(:knowledge_base_category, knowledge_base: knowledge_base)
+      cached_category_ids # cache the state including the category
+
+      category.destroy!
+
+      expect(cached_category_ids).not_to include(category.id)
+    end
+
+    it 'lists a category moved in from another knowledge base' do
+      category = create(:knowledge_base_category)
+      cached_category_ids # cache the state without the category
+
+      category.update!(knowledge_base: knowledge_base)
+
+      expect(cached_category_ids).to include(category.id)
+    end
+
+    it 'drops a category moved out to another knowledge base' do
+      category = create(:knowledge_base_category, knowledge_base: knowledge_base)
+      cached_category_ids # cache the state including the category
+
+      category.update!(knowledge_base: create(:knowledge_base))
+
+      expect(cached_category_ids).not_to include(category.id)
+    end
+  end
+
   describe '#attributes_with_association_ids' do
     context 'when category has children' do
       subject(:kb_category_with_tree) { create(:kb_category_with_tree) }
@@ -185,5 +454,295 @@ RSpec.describe KnowledgeBase::Category, current_user_id: 1, type: :model do
         )
       end
     end
+  end
+
+  describe '.vector_indexable?' do
+    subject(:kb_category_with_tree) { create(:kb_category_with_tree) }
+
+    let(:sibling_category)    { kb_category_with_tree.children.sorted.first }
+    let(:excluded_category)   { kb_category_with_tree.children.sorted.last }
+    let(:child_category)      { excluded_category.children.sorted.first }
+    let(:grandchild_category) { child_category.children.sorted.first }
+
+    it 'indexes every category while nothing is excluded' do
+      expect(described_class).to be_vector_indexable(excluded_category)
+    end
+
+    context 'when a category is excluded' do
+      before { Setting.set('vectordb_knowledge_base_excluded_category_ids', [excluded_category.id]) }
+
+      it 'excludes the category itself' do
+        expect(described_class).not_to be_vector_indexable(excluded_category)
+      end
+
+      it 'excludes its sub-category' do
+        expect(described_class).not_to be_vector_indexable(child_category)
+      end
+
+      it 'excludes a sub-category at any depth' do
+        expect(described_class).not_to be_vector_indexable(grandchild_category)
+      end
+
+      it 'keeps the siblings of an excluded category indexable' do
+        expect(described_class).to be_vector_indexable(sibling_category)
+      end
+
+      it 'keeps the parent of an excluded category indexable' do
+        expect(described_class).to be_vector_indexable(kb_category_with_tree)
+      end
+
+      context 'when given an id instead of a category' do
+        it 'excludes the category itself' do
+          expect(described_class).not_to be_vector_indexable(excluded_category.id)
+        end
+
+        it 'excludes a sub-category at any depth' do
+          expect(described_class).not_to be_vector_indexable(grandchild_category.id)
+        end
+
+        it 'accepts the id as a string' do
+          expect(described_class).not_to be_vector_indexable(grandchild_category.id.to_s)
+        end
+
+        it 'keeps the siblings of an excluded category indexable' do
+          expect(described_class).to be_vector_indexable(sibling_category.id)
+        end
+
+        it 'treats a missing category as indexable' do
+          expect(described_class).to be_vector_indexable(nil)
+        end
+      end
+    end
+
+    context 'when the excluded ids are stored as strings' do
+      before { Setting.set('vectordb_knowledge_base_excluded_category_ids', [excluded_category.id.to_s]) }
+
+      it 'excludes the category itself' do
+        expect(described_class).not_to be_vector_indexable(excluded_category)
+      end
+
+      it 'excludes a sub-category at any depth' do
+        expect(described_class).not_to be_vector_indexable(grandchild_category)
+      end
+    end
+
+    # The setting carries no validation and Setting.set takes a `validate: false` escape hatch, so
+    # anything can end up stored there — and this is reached from an after_commit on every answer
+    # save, where a raise used to take answer editing down with it.
+    context 'when the stored setting value is unusable' do
+      it 'reads a bare id as a single exclusion' do
+        Setting.set('vectordb_knowledge_base_excluded_category_ids', excluded_category.id)
+
+        expect(described_class).not_to be_vector_indexable(excluded_category)
+      end
+
+      it 'ignores entries that are not ids instead of coercing them' do
+        Setting.set('vectordb_knowledge_base_excluded_category_ids', ["#{excluded_category.id}abc", ' ', nil])
+
+        expect(described_class).to be_vector_indexable(excluded_category)
+      end
+
+      it 'does not let a zero-coercing entry exclude an unknown category' do
+        Setting.set('vectordb_knowledge_base_excluded_category_ids', [nil, ' ', 0])
+
+        expect(described_class).to be_vector_indexable(nil)
+      end
+
+      it 'survives a value that is not a list at all' do
+        Setting.set('vectordb_knowledge_base_excluded_category_ids', 'nonsense')
+
+        expect(described_class).to be_vector_indexable(excluded_category)
+      end
+
+      # Deleting an excluded category leaves its id behind in the setting. Both this check and
+      # .vector_excluded_category_ids resolve the configured ids against the tree, so a dead id
+      # simply drops out — and, being one list, they cannot disagree about it.
+      it 'ignores an id that no longer resolves to a category' do
+        kb_category_with_tree
+        stale_id = described_class.maximum(:id) + 1
+        Setting.set('vectordb_knowledge_base_excluded_category_ids', [stale_id])
+
+        expect(described_class).to be_vector_indexable(stale_id)
+      end
+    end
+  end
+
+  describe '.vector_excluded_category_ids' do
+    subject(:kb_category_with_tree) { create(:kb_category_with_tree) }
+
+    let(:sibling_category)    { kb_category_with_tree.children.sorted.first }
+    let(:excluded_category)   { kb_category_with_tree.children.sorted.last }
+    let(:child_category)      { excluded_category.children.sorted.first }
+    let(:grandchild_category) { child_category.children.sorted.first }
+
+    it 'is empty while nothing is excluded' do
+      kb_category_with_tree
+
+      expect(described_class.vector_excluded_category_ids).to be_empty
+    end
+
+    context 'when a category is excluded' do
+      before { Setting.set('vectordb_knowledge_base_excluded_category_ids', [excluded_category.id]) }
+
+      it 'returns the category and its whole subtree' do
+        expect(described_class.vector_excluded_category_ids)
+          .to include(excluded_category.id, child_category.id, grandchild_category.id)
+      end
+
+      it 'leaves categories outside the subtree alone' do
+        expect(described_class.vector_excluded_category_ids)
+          .not_to include(kb_category_with_tree.id, sibling_category.id)
+      end
+    end
+
+    # Excluding a category and something below it makes the two subtrees overlap.
+    context 'when overlapping subtrees are excluded' do
+      before { Setting.set('vectordb_knowledge_base_excluded_category_ids', [excluded_category.id, child_category.id]) }
+
+      it 'returns each category once' do
+        ids = described_class.vector_excluded_category_ids
+
+        expect(ids).to eq(ids.uniq)
+      end
+    end
+  end
+
+  describe 'resyncing the vector index when a category moves', performs_jobs: true do
+    subject(:kb_category_with_tree) { create(:kb_category_with_tree) }
+
+    let(:knowledge_base)    { kb_category_with_tree.knowledge_base }
+    let(:excluded_category) { kb_category_with_tree.children.sorted.last }
+    let(:moved_category)    { create(:knowledge_base_category, knowledge_base:) }
+
+    before do
+      allow(Service::AI::VectorDB::Available).to receive(:execute).and_return(true)
+      Setting.set('vectordb_knowledge_base_excluded_category_ids', [excluded_category.id])
+      moved_category
+      clear_jobs
+    end
+
+    it 'resyncs when the category leaves an excluded parent' do
+      moved_category.update!(parent: excluded_category)
+      clear_jobs
+
+      expect { moved_category.update!(parent: nil) }
+        .to have_enqueued_job(VectorIndexKnowledgeBaseCategoryResyncJob).with(moved_category)
+    end
+
+    it 'resyncs when the category leaves a sub-category of an excluded parent' do
+      moved_category.update!(parent: create(:knowledge_base_category, knowledge_base:, parent: excluded_category))
+      clear_jobs
+
+      expect { moved_category.update!(parent: nil) }
+        .to have_enqueued_job(VectorIndexKnowledgeBaseCategoryResyncJob).with(moved_category)
+    end
+
+    # The documents stay in the index, but the search filters hits by category, so they cannot
+    # surface — not worth fanning out over the subtree to remove them.
+    it 'does not resync when the category moves under an excluded parent' do
+      expect { moved_category.update!(parent: excluded_category) }
+        .not_to have_enqueued_job(VectorIndexKnowledgeBaseCategoryResyncJob)
+    end
+
+    it 'does not resync when the category is excluded in its own right' do
+      Setting.set('vectordb_knowledge_base_excluded_category_ids', [excluded_category.id, moved_category.id])
+      moved_category.update!(parent: excluded_category)
+      clear_jobs
+
+      expect { moved_category.update!(parent: nil) }
+        .not_to have_enqueued_job(VectorIndexKnowledgeBaseCategoryResyncJob)
+    end
+
+    it 'does not resync for a move between two indexable parents' do
+      other_category = create(:knowledge_base_category, knowledge_base:)
+      clear_jobs
+
+      expect { moved_category.update!(parent: other_category) }
+        .not_to have_enqueued_job(VectorIndexKnowledgeBaseCategoryResyncJob)
+    end
+
+    it 'does not resync for a change that leaves the parent alone' do
+      expect { moved_category.update!(category_icon: 'f0c3') }
+        .not_to have_enqueued_job(VectorIndexKnowledgeBaseCategoryResyncJob)
+    end
+
+    it 'does not resync when the vector database is unavailable' do
+      moved_category.update!(parent: excluded_category)
+      clear_jobs
+      allow(Service::AI::VectorDB::Available).to receive(:execute).and_return(false)
+
+      expect { moved_category.update!(parent: nil) }
+        .not_to have_enqueued_job(VectorIndexKnowledgeBaseCategoryResyncJob)
+    end
+  end
+
+  describe '.sorted_by_mode' do
+    # `last_update` is the only mode that reads a timestamp, and the one thing it may read is the
+    #   editorial one of the translation the category is *shown* under — see the note on the scope.
+    context 'with the last update mode' do
+      let(:knowledge_base)   { create(:knowledge_base) }
+      let(:primary_locale)   { knowledge_base.translation_primary.kb_locale }
+      let(:secondary_locale) { create(:knowledge_base_locale, knowledge_base:, system_locale: Locale.find_by(locale: 'lt')) }
+
+      let(:older) { create(:knowledge_base_category, knowledge_base:) }
+      let(:newer) { create(:knowledge_base_category, knowledge_base:) }
+
+      # No translation at all, so the correlated subquery is null for it — the one case `NULLS LAST`
+      #   is there for.
+      let(:untranslated) do
+        create(:knowledge_base_category, knowledge_base:).tap { |cat| cat.translations.destroy_all }
+      end
+
+      def sorted_ids(system_locale_or_id: primary_locale.system_locale_id)
+        described_class
+          .where(id: [older.id, newer.id, untranslated.id])
+          .sorted_by_mode('last_update', system_locale_or_id:)
+          .pluck(:id)
+      end
+
+      before do
+        older.translation_primary.update!(edited_at: 1.week.ago)
+        newer.translation_primary.update!(edited_at: 1.hour.ago)
+      end
+
+      it 'orders by the edit date of the shown translation, most recent first' do
+        expect(sorted_ids).to eq([newer.id, older.id, untranslated.id])
+      end
+
+      # The browsed locale decides which translation is shown, so it decides which date is read —
+      #   and where the browsed locale has none, the primary one it falls back to does.
+      it 'reads the translation of the browsed locale' do
+        create(:knowledge_base_category_translation, category: older, kb_locale: secondary_locale)
+          .update!(edited_at: 1.minute.ago)
+
+        expect(sorted_ids(system_locale_or_id: secondary_locale.system_locale_id))
+          .to eq([older.id, newer.id, untranslated.id])
+      end
+
+      # What the `updated_at` proxy this replaced could not tell apart: neither of these is an edit
+      #   of anything the category shows.
+      it 'is unaffected by a reorder or a sorting-mode switch' do
+        older.update!(position: 0, category_sorting_mode: 'alphabetical')
+
+        expect(sorted_ids).to eq([newer.id, older.id, untranslated.id])
+      end
+
+      it 'files a category without any translation last' do
+        older.translation_primary.update!(edited_at: 10.years.ago)
+
+        expect(sorted_ids.last).to eq(untranslated.id)
+      end
+    end
+  end
+
+  describe 'HasTranslations' do
+    include_context 'basic Knowledge Base'
+
+    let!(:record) { category }
+    let(:add_translation) do
+      ->(locale) { create(:knowledge_base_category_translation, category: record, kb_locale: locale) }
+    end
+
+    it_behaves_like 'HasTranslations'
   end
 end

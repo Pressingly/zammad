@@ -2,6 +2,7 @@
 
 class Webhook < ApplicationModel
   include ChecksClientNotification
+  include HasAuditLogs
   include ChecksHtmlSanitized
   include HasCollectionUpdate
   include HasSearchIndexBackend
@@ -12,6 +13,8 @@ class Webhook < ApplicationModel
 
   SENSITIVE_FIELDS = %i[bearer_token signature_token basic_auth_password].freeze
 
+  self.audit_log_attributes_ignored = %i[preferences]
+
   before_save :reset_custom_payload
 
   validates :name, presence: true
@@ -21,6 +24,10 @@ class Webhook < ApplicationModel
 
   validates :note, length: { maximum: 500 }
   sanitized_html :note
+
+  # Same gate as the initial delivery in SessionHelper::CollectionAdmin, otherwise the push would be
+  #   the only way for non-admins to receive webhooks - including endpoints which can carry a secret.
+  collection_push_permission('admin.*')
 
   store :preferences
 

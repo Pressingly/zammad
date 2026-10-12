@@ -19,6 +19,50 @@ module EnsureWebsocket
     end
   end
 
+  # Waits until the current websocket session is marked as logged-in on the
+  #   server. The websocket server registers the session without a user on
+  #   connection open (WebsocketServer.onopen) and attaches the user only once
+  #   the client's `login` event was processed (Sessions::Event::Login) -
+  #   ensure_websocket can pass in between, and pushes sent via
+  #   Sessions.broadcast or Sessions.send_to before that silently skip the
+  #   session and are lost for good.
+  #   Only websocket sessions can satisfy the wait - AJAX (long-polling)
+  #   sessions in the list could otherwise do so while the websocket itself
+  #   is still unauthenticated.
+  #
+  # @param user [User] accept only a session of this user
+  # @param except [Array<String>] session ids to ignore - after an in-test
+  #   reload, pass the session ids captured before the reload: the stale
+  #   websocket session stays authenticated in the session store until its
+  #   disconnect is processed and could otherwise satisfy the wait while the
+  #   new connection is still unauthenticated.
+  def wait_for_authenticated_session(user: nil, except: [])
+    wait.until do
+      Sessions.list.any? do |client_id, session|
+        except.exclude?(client_id) &&
+          session.dig(:meta, :type) == 'websocket' &&
+          session.dig(:user, 'id').present? &&
+          (user.nil? || session.dig(:user, 'id').to_i == user.id)
+      end
+    end
+  end
+
+  # Waits until a push from the server reaches the current page. A push sent
+  #   right after the connection opened can get lost, although ensure_websocket
+  #   already passed - the probe is sent again until one arrives.
+  def ensure_websocket_push_delivery
+    page.execute_script(<<~JS)
+      window.websocketProbeReceived = false
+      App.Event.bind('spec:websocket_probe', function() { window.websocketProbeReceived = true }, 'spec')
+    JS
+
+    wait(interval: 0.5).until do
+      Sessions.broadcast({ event: 'spec:websocket_probe' }, 'public')
+
+      page.evaluate_script('window.websocketProbeReceived')
+    end
+  end
+
   private
 
   # Checks if session was active since given time

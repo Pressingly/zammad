@@ -1,0 +1,11 @@
+query knowledgeBaseAnswer(
+  $answerId: ID!
+  $locale: String
+  $withBodyForEditing: Boolean = false
+  $withNavigation: Boolean = true
+) {
+  knowledgeBaseAnswer(answerId: $answerId, locale: $locale) {
+    id
+    ...knowledgeBaseAnswerAttributes
+  }
+}

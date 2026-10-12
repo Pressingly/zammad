@@ -386,23 +386,20 @@ RSpec.describe 'Overview', type: :system do
 
     shared_examples 'resizing table columns' do
       it 'resizes table columns' do
-        initial_number_width = find_all('.js-tableHead')[1].native.size.width.to_i
-        initial_title_width = find_all('.js-tableHead')[2].native.size.width.to_i
+        initial_number_width = find_all('.js-tableHead')[1].evaluate_script('this.offsetWidth').to_i
+        initial_title_width = find_all('.js-tableHead')[2].evaluate_script('this.offsetWidth').to_i
 
         column_resize_handle = find_all('.js-col-resize')[0]
 
         # Drag the first column resize handle to the left.
         #   Move the cursor horizontally by 100 pixels.
         #   Finally, drop the handle to resize the column.
-        page.driver.browser.action
-          .move_to(column_resize_handle.native)
-          .click_and_hold
-          .move_by(-100, 0)
-          .release
-          .perform
+        click_and_hold(column_resize_handle.native)
+        move_mouse_by(-100, 0)
+        release_mouse
 
-        final_number_width = find_all('.js-tableHead')[1].native.size.width.to_i
-        final_title_width = find_all('.js-tableHead')[2].native.size.width.to_i
+        final_number_width = find_all('.js-tableHead')[1].evaluate_script('this.offsetWidth').to_i
+        final_title_width = find_all('.js-tableHead')[2].evaluate_script('this.offsetWidth').to_i
 
         expect(final_number_width).to be < initial_number_width
         expect(final_title_width).to be > initial_title_width
@@ -620,6 +617,94 @@ RSpec.describe 'Overview', type: :system do
             .and have_css('tr:nth-child(2)', text: ticket_1.title)
             .and have_css('tr:nth-child(3)', text: ticket_2.title)
         end
+      end
+    end
+  end
+
+  # Ported from test/browser/agent_ticket_overview_pending_til_test.rb.
+  # Regression for https://github.com/zammad/zammad/issues/2367:
+  #   the "Pending till" column of an overview must be sortable.
+  context 'when sorting by the pending till column', authenticated_as: :authenticate do
+    let(:group) { Group.find_by(name: 'Users') }
+
+    let(:overview) do
+      create(:overview,
+             condition: {
+               'ticket.state_id' => {
+                 operator: 'is',
+                 value:    Ticket::State.where(name: ['new', 'open', 'closed', 'merged', 'pending close', 'pending reminder']).pluck(:id),
+               },
+             },
+             view:      { 's' => %w[title state pending_time] })
+    end
+
+    def authenticate
+      Ticket.destroy_all
+
+      create_list(:ticket, 2, group:, state_name: 'open')
+      create_list(:ticket, 2, group:, state_name: 'pending close', pending_time: Time.zone.parse('2028-11-24 08:00'))
+
+      overview
+
+      true
+    end
+
+    it 'sorts the pending tickets to the top' do
+      visit "ticket/view/#{overview.link}"
+
+      find('[data-column-key=pending_time] .js-sort').click
+
+      within '.js-tableBody' do
+        expect(page)
+          .to have_css('tr:nth-child(1)', text: 'pending close')
+          .and have_css('tr:nth-child(2)', text: 'pending close')
+      end
+    end
+  end
+
+  # Ported from test/browser/agent_ticket_overview_group_by_organization_test.rb.
+  # Regression for https://github.com/zammad/zammad/issues/2046: special characters
+  #   in the organization group header must not be rendered HTML-encoded.
+  context 'when grouping by organization', authenticated_as: :authenticate do
+    let(:group)        { Group.find_by(name: 'Users') }
+    let(:organization) { create(:organization, name: 'äöüß & Test Organization') }
+    let(:customer)     { create(:customer, organization: organization) }
+    let(:overview)     { create(:overview, group_by: 'organization') }
+
+    def authenticate
+      Ticket.destroy_all
+
+      create(:ticket, group:, customer: customer)
+      overview
+
+      true
+    end
+
+    it 'renders the organization group header without HTML encoding' do
+      visit "ticket/view/#{overview.link}"
+
+      expect(all('.table-overview table b').map(&:text)).to include('äöüß & Test Organization')
+    end
+  end
+
+  context 'when overview name contains underscores', authenticated_as: :admin do
+    let(:admin)    { create(:admin) }
+    let(:overview) { create(:overview, name: 'This_is_one_jolly_overview') }
+
+    it 'shows the name without inline markup' do
+      visit "ticket/view/#{overview.link}"
+
+      within :active_content do
+        expect(page).to have_css('.sidebar .nav a', text: 'This_is_one_jolly_overview')
+        expect(page).to have_css('.page-header h2', text: 'This_is_one_jolly_overview')
+        expect(page).to have_no_css('.sidebar .nav u, .page-header h2 u')
+
+        click '.page-header [data-type=settings]'
+      end
+
+      in_modal do
+        expect(page).to have_css('.modal-title', text: 'Edit: This_is_one_jolly_overview')
+        expect(page).to have_no_css('.modal-title u')
       end
     end
   end

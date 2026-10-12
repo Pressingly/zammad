@@ -87,7 +87,7 @@ const titleClass = computed(() => {
                   )
                 }}
               </CommonLabel>
-              <CommonLabel v-if="errorMessage" class="text-red-500 dark:text-red-500">
+              <CommonLabel v-if="errorMessage" class="wrap-anywhere text-red-500 dark:text-red-500">
                 {{ $t('API server error: %s', $t(errorMessage)) }}
               </CommonLabel>
             </div>
@@ -98,7 +98,7 @@ const titleClass = computed(() => {
         </div>
       </template>
       <template v-else-if="summary">
-        <template v-for="item in summaryHeadings" :key="item.key">
+        <template v-for="item in summaryHeadings" :key="String(item.key)">
           <article
             v-if="
               Array.isArray(item.key)

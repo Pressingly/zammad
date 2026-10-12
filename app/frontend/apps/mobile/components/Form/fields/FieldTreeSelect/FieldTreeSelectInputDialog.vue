@@ -4,7 +4,6 @@
 import { escapeRegExp } from 'lodash-es'
 import { computed, nextTick, onMounted, ref, toRef, watch } from 'vue'
 
-import CommonInputSearch from '#shared/components/CommonInputSearch/CommonInputSearch.vue'
 import type { SelectOption } from '#shared/components/CommonSelect/types.ts'
 import useValue from '#shared/components/Form/composables/useValue.ts'
 import type {
@@ -14,8 +13,10 @@ import type {
 import useSelectOptions from '#shared/composables/useSelectOptions.ts'
 import { useTraverseOptions } from '#shared/composables/useTraverseOptions.ts'
 import { useLocaleStore } from '#shared/stores/locale.ts'
+import { deaccent } from '#shared/utils/labelMatching.ts'
 
 import CommonDialog from '#mobile/components/CommonDialog/CommonDialog.vue'
+import CommonInputSearch from '#mobile/components/CommonInputSearch/CommonInputSearch.vue'
 import CommonTicketStateIndicator from '#mobile/components/CommonTicketStateIndicator/CommonTicketStateIndicator.vue'
 import { closeDialog } from '#mobile/composables/useDialog.ts'
 
@@ -100,8 +101,6 @@ useTraverseOptions(() => dialog.value?.parentElement, {
   },
 })
 
-const deaccent = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-
 const filteredOptions = computed(() => {
   // In case we are not currently filtering for a parent, search across all options.
   let options = props.sortedOptions
@@ -175,7 +174,7 @@ const getCurrentIndex = (option: FlatSelectOption) => {
       :class="{
         'px-6': !context.noFiltering,
       }"
-      class="focus:bg-blue-highlight flex h-[58px] cursor-pointer items-center self-stretch px-4 py-5 text-base leading-[19px] text-white focus:outline-hidden"
+      class="flex h-[58px] cursor-pointer items-center self-stretch px-4 py-5 text-base leading-[19px] text-white focus:bg-blue-highlight focus:outline-hidden"
       tabindex="0"
       role="button"
       :aria-label="$t('Back to previous page')"
@@ -211,7 +210,7 @@ const getCurrentIndex = (option: FlatSelectOption) => {
           'px-6': !context.noFiltering,
           'pointer-events-none': option.disabled,
         }"
-        class="focus:bg-blue-highlight relative flex h-[58px] cursor-pointer items-center self-stretch px-4 py-5 text-base leading-[19px] text-white focus:outline-hidden"
+        class="relative flex h-[58px] cursor-pointer items-center self-stretch px-4 py-5 text-base leading-[19px] text-white focus:bg-blue-highlight focus:outline-hidden"
         tabindex="0"
         role="option"
         :aria-selected="option.disabled ? undefined : isCurrentValue(option.value)"

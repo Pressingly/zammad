@@ -7,6 +7,7 @@ import type { TicketArticle } from '#shared/entities/ticket/types.ts'
 import { i18n } from '#shared/i18n.ts'
 
 import { lookupArticlePlugin } from '#desktop/pages/ticket/components/TicketDetailView/article-type/index.ts'
+import ArticleMetaAccountedTime from '#desktop/pages/ticket/components/TicketDetailView/ArticleMeta/ArticleMetaAccountedTime.vue'
 import ArticleMetaAddress from '#desktop/pages/ticket/components/TicketDetailView/ArticleMeta/ArticleMetaAddress.vue'
 import ArticleMetaDetectedLanguage from '#desktop/pages/ticket/components/TicketDetailView/ArticleMeta/ArticleMetaDetectedLanguage.vue'
 import type { ChannelMetaField } from '#desktop/pages/ticket/components/TicketDetailView/ArticleMeta/types.ts'
@@ -44,6 +45,24 @@ const addNewFields = (fields: ChannelMetaField[], article: Ref<TicketArticle>) =
   return fields
 }
 
+const getMetaAddressLabel = (
+  address: TicketArticle['from'] | TicketArticle['to'] | TicketArticle['cc'],
+) => {
+  if (!address) return undefined
+
+  if (address.parsed?.length) {
+    return address.parsed
+      .map((entry) =>
+        [entry.name, entry.emailAddress ? `<${entry.emailAddress}>` : null]
+          .filter(Boolean)
+          .join(' '),
+      )
+      .join(', ')
+  }
+
+  return address.raw
+}
+
 export const useArticleMeta = (article: Ref<TicketArticle>) => {
   const links = computed(() => article.value.preferences?.links || [])
   const fields = computed(() => {
@@ -68,6 +87,7 @@ export const useArticleMeta = (article: Ref<TicketArticle>) => {
         props: {
           metaHeader: 'from',
         },
+        value: getMetaAddressLabel(article.value.from),
         show: () => !!(article.value.from?.parsed?.length || article.value.from?.raw),
         order: 200,
       },
@@ -78,6 +98,7 @@ export const useArticleMeta = (article: Ref<TicketArticle>) => {
         props: {
           metaHeader: 'to',
         },
+        value: getMetaAddressLabel(article.value.to),
         show: () => !!(article.value.to?.parsed?.length || article.value.to?.raw),
         order: 300,
       },
@@ -88,6 +109,7 @@ export const useArticleMeta = (article: Ref<TicketArticle>) => {
         props: {
           metaHeader: 'cc',
         },
+        value: getMetaAddressLabel(article.value.cc),
         show: () => !!(article.value.cc?.parsed?.length || article.value.cc?.raw),
         order: 350,
       },
@@ -106,6 +128,13 @@ export const useArticleMeta = (article: Ref<TicketArticle>) => {
         links: article.value.preferences?.links,
         component: plugin?.channel?.component,
         order: 400,
+      },
+      {
+        label: __('Accounted time'),
+        name: 'timeUnit',
+        component: ArticleMetaAccountedTime,
+        show: () => !!article.value.timeUnit,
+        order: 500,
       },
     ]
 

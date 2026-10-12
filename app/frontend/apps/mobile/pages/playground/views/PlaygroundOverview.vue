@@ -241,8 +241,8 @@ const linkSchemaRaw = [
       action: '/tickets',
       actionIcon: 'new-customer',
       gqlQuery: `
-query autocompleteSearchUser($input: AutocompleteSearchInput!) {
-  autocompleteSearchUser(input: $input) {
+query autocompleteSearchGeneric($input: AutocompleteSearchGenericInput!) {
+  autocompleteSearchGeneric(input: $input) {
     value
     label
     labelPlaceholder
@@ -274,8 +274,8 @@ query autocompleteSearchUser($input: AutocompleteSearchInput!) {
     label: 'Organization',
     props: {
       gqlQuery: `
-query autocompleteSearchUser($input: AutocompleteSearchInput!) {
-  autocompleteSearchUser(input: $input) {
+query autocompleteSearchOrganization($input: AutocompleteSearchOrganizationInput!) {
+  autocompleteSearchOrganization(input: $input) {
     value
     label
     labelPlaceholder
@@ -294,7 +294,7 @@ query autocompleteSearchUser($input: AutocompleteSearchInput!) {
     label: 'Customer',
     props: {
       gqlQuery: `
-query autocompleteSearchUser($input: AutocompleteSearchInput!) {
+query autocompleteSearchUser($input: AutocompleteSearchUserInput!) {
   autocompleteSearchUser(input: $input) {
     value
     label
@@ -567,7 +567,7 @@ const notifyAllTypes = () => {
       <CommonButton class="flex-1 py-2" variant="submit" />
       <CommonButton class="flex-1 py-2" variant="danger" />
     </div>
-    <h3 class="text-gray mt-2 mb-2 text-lg font-medium">With transparent background</h3>
+    <h3 class="mt-2 mb-2 text-lg font-medium text-gray">With transparent background</h3>
     <div class="flex gap-3">
       <CommonButton class="flex-1 py-2" variant="primary" transparent-background />
       <CommonButton class="flex-1 py-2" variant="secondary" transparent-background />

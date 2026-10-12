@@ -150,6 +150,43 @@ RSpec.describe 'Search', authenticated_as: :authenticate, searchindex: true, typ
           expect(page).to have_css('.batch-overlay-circle--top.js-batch-macro-circle')
             .and(have_css('.batch-overlay-circle--bottom.js-batch-assign-circle'))
         end
+
+        context 'with priority icons enabled' do
+          let(:before_authenticate) { Setting.set('ui_ticket_priority_icons', true) }
+
+          it 'shows the ticket number in the dragged row' do
+            within(:active_content, '.main .table') do
+              element = page.find(:table_row, ticket_1.id).native
+              click_and_hold(element)
+              move_mouse_by(0, 5)
+              move_mouse_by(0, 7)
+            end
+
+            expect(page).to have_css('.batch-dragger', text: ticket_1.number)
+          ensure
+            release_mouse
+          end
+        end
+      end
+
+      context 'when a row on a non-ticket tab is dragged' do
+        let(:customer)            { create(:customer, firstname: 'Testing') }
+        let(:before_authenticate) { customer }
+
+        it 'does not show the batch actions' do
+          find('[data-tab-content=User]').click
+
+          within(:active_content, '.main .table') do
+            element = page.find(:table_row, customer.id).native
+            click_and_hold(element)
+            move_mouse_by(0, 5)
+            move_mouse_by(0, 7)
+          end
+
+          expect(page).to have_no_css('.batch-dragger', visible: :all)
+        ensure
+          release_mouse
+        end
       end
     end
   end
@@ -301,7 +338,10 @@ RSpec.describe 'Search', authenticated_as: :authenticate, searchindex: true, typ
           display_macro_batches ticket_1
           within(:active_content) do
 
-            expect(page).to have_css('.batch-overlay-macro-entry', count: count)
+            # Not `have_css(count:)`: the overlay clips the overflowing entries
+            #   instead of hiding them, which the drivers disagree about (see
+            #   #visible_macro_entry_count).
+            wait.until { visible_macro_entry_count == count }
           end
         end
       end
@@ -364,10 +404,13 @@ RSpec.describe 'Search', authenticated_as: :authenticate, searchindex: true, typ
       find('.table-column-title', text: 'GROUP').click
       find('.table-column-title', text: 'GROUP').click
 
-      actual_ids   = all('.js-tableBody tr.item').map { |row| row['data-id'].to_i }
-      expected_ids = [ticket_6, ticket_4, ticket_2, ticket_3, ticket_5, ticket_1].map(&:id)
+      actual_ids = all('.js-tableBody tr.item').map { |row| row['data-id'].to_i }
 
-      expect(actual_ids).to eq(expected_ids)
+      # Elasticsearch does not guarantee a stable tie-break order for tickets sharing the
+      # same group, so only assert that the groups themselves are ordered correctly (all
+      # group_2 tickets before all group_1 tickets), not the exact order within a group.
+      expect(actual_ids.first(3)).to match_array([ticket_6, ticket_4, ticket_2].map(&:id))
+      expect(actual_ids.last(3)).to match_array([ticket_3, ticket_5, ticket_1].map(&:id))
     end
 
   end
@@ -423,6 +466,45 @@ RSpec.describe 'Search', authenticated_as: :authenticate, searchindex: true, typ
     end
   end
 
+  context 'with search shortcuts' do
+    let(:agent)             { create(:agent, groups: Group.all) }
+    let(:authenticate_user) { agent }
+
+    before do
+      fill_in id: 'global-search', with: 'Testing'
+
+      click_on 'Show Search Details'
+
+      find('.detail-search .js-emptySearch').click
+    end
+
+    it 'shows the shortcuts of the active tab', :aggregate_failures do
+      within '.detail-search' do
+        find('.js-shortcutsDropdown [data-toggle="dropdown"]').click
+
+        expect(page).to have_css('.js-shortcut', text: 'New or open tickets')
+
+        # close the dropdown again, otherwise it overlays the tab bar
+        find('.js-shortcutsDropdown [data-toggle="dropdown"]').click
+
+        find('[data-tab-content=User]').click
+        find('.js-shortcutsDropdown [data-toggle="dropdown"]').click
+
+        expect(page).to have_css('.js-shortcut', text: 'VIP only')
+      end
+    end
+
+    context 'when user is customer' do
+      let(:customer)            { create(:customer) }
+      let(:authenticate_user)   { customer }
+      let(:before_authenticate) { ticket_1.update!(customer: customer) }
+
+      it 'shows no shortcuts button' do
+        expect(page).to have_no_css('.detail-search .js-shortcutsDropdown')
+      end
+    end
+  end
+
   describe 'Search is not triggered/updated if url of search is updated new search item or new search is triggered via global search #3873' do
     let(:agent)             { create(:agent, groups: Group.all) }
     let(:authenticate_user) { agent }
@@ -434,15 +516,26 @@ RSpec.describe 'Search', authenticated_as: :authenticate, searchindex: true, typ
 
       it 'does switch search results properly' do
         page.find('.js-search').fill_in(with: '"Testing Ticket 1"')
-        expect(page.find('.js-tableBody')).to have_text('Testing Ticket 1')
-        expect(page.find('.js-tableBody')).to have_no_text('Testing Ticket 2')
+        expect(page).to have_css('.js-tableBody', text: 'Testing Ticket 1')
+        expect(page).to have_no_css('.js-tableBody', text: 'Testing Ticket 2')
         expect(current_url).to include('Testing%20Ticket%201')
 
         # switch by global search
-        page.find('.js-search').fill_in(with: '"Testing Ticket 2"', fill_options: { clear: :backspace })
-        expect(page.find('.js-tableBody')).to have_text('Testing Ticket 2')
-        expect(page.find('.js-tableBody')).to have_no_text('Testing Ticket 1')
+        page.find('.js-search').fill_in(with: '"Testing Ticket 2"')
+        expect(page).to have_css('.js-tableBody', text: 'Testing Ticket 2')
+        expect(page).to have_no_css('.js-tableBody', text: 'Testing Ticket 1')
         expect(current_url).to include('Testing%20Ticket%202')
+      end
+
+      it 'keeps input typed before the route of the previous key is executed' do
+        page.execute_script(<<~JS)
+          $('.js-search').val('Testing Ticket').trigger('keyup')
+          $('.js-search').val('Testing Ticket 2')
+        JS
+
+        # The results of the first key are rendered only after the route has been executed.
+        expect(page).to have_css('.js-tableBody', text: 'Testing Ticket 1')
+        expect(page).to have_field(class: 'js-search', with: 'Testing Ticket 2')
       end
     end
 
@@ -453,15 +546,15 @@ RSpec.describe 'Search', authenticated_as: :authenticate, searchindex: true, typ
       end
 
       it 'does switch search results properly' do
-        expect(page.find('.js-tableBody')).to have_text('Testing Ticket 1')
-        expect(page.find('.js-tableBody')).to have_no_text('Testing Ticket 2')
+        expect(page).to have_css('.js-tableBody', text: 'Testing Ticket 1')
+        expect(page).to have_no_css('.js-tableBody', text: 'Testing Ticket 2')
         expect(current_url).to include('Testing%20Ticket%201')
 
         # switch by global search
         fill_in id: 'global-search', with: '"Testing Ticket 2"'
         click_on 'Show Search Details'
-        expect(page.find('.js-tableBody')).to have_text('Testing Ticket 2')
-        expect(page.find('.js-tableBody')).to have_no_text('Testing Ticket 1')
+        expect(page).to have_css('.js-tableBody', text: 'Testing Ticket 2')
+        expect(page).to have_no_css('.js-tableBody', text: 'Testing Ticket 1')
         expect(current_url).to include('Testing%20Ticket%202')
       end
     end
@@ -472,16 +565,31 @@ RSpec.describe 'Search', authenticated_as: :authenticate, searchindex: true, typ
       end
 
       it 'does switch search results properly' do
-        expect(page.find('.js-tableBody')).to have_text('Testing Ticket 1')
-        expect(page.find('.js-tableBody')).to have_no_text('Testing Ticket 2')
+        expect(page).to have_css('.js-tableBody', text: 'Testing Ticket 1')
+        expect(page).to have_no_css('.js-tableBody', text: 'Testing Ticket 2')
         expect(current_url).to include('Testing%20Ticket%201')
 
         # switch by url
         visit '#search/"Testing Ticket 2"'
-        expect(page.find('.js-tableBody')).to have_text('Testing Ticket 2')
-        expect(page.find('.js-tableBody')).to have_no_text('Testing Ticket 1')
+        expect(page).to have_css('.js-tableBody', text: 'Testing Ticket 2')
+        expect(page).to have_no_css('.js-tableBody', text: 'Testing Ticket 1')
         expect(current_url).to include('Testing%20Ticket%202')
       end
+    end
+  end
+
+  describe 'Sidebar gets stuck with "no match" when pressing enter too quickly #4786' do
+    let(:agent)             { create(:agent, groups: Group.all) }
+    let(:authenticate_user) { agent }
+
+    it 'does not leave a stale "no match" banner in the sidebar' do
+      find('#global-search').send_keys('zzqqxxwwvvuu', :enter)
+
+      within '.detail-search' do
+        expect(page).to have_css('.js-content table.table--placeholder')
+      end
+
+      expect(page).to have_no_css('.search.open')
     end
   end
 
@@ -627,9 +735,8 @@ RSpec.describe 'Search', authenticated_as: :authenticate, searchindex: true, typ
         find('.js-search').fill_in with: 'Nicole'
       end
 
-      within('.table-column-head', text: 'TITLE') do
-        expect(page).to have_no_css('.table-sort-arrow')
-      end
+      expect(page).to have_css('.table-column-head', text: 'TITLE')
+      expect(page).to have_no_css('.table-column-head .table-sort-arrow')
     end
 
     it 'when changing search query after navigation away-and-back clear sorting' do
@@ -641,9 +748,8 @@ RSpec.describe 'Search', authenticated_as: :authenticate, searchindex: true, typ
         find('.js-search').fill_in with: 'Nicole'
       end
 
-      within('.table-column-head', text: 'TITLE') do
-        expect(page).to have_no_css('.table-sort-arrow')
-      end
+      expect(page).to have_css('.table-column-head', text: 'TITLE')
+      expect(page).to have_no_css('.table-column-head .table-sort-arrow')
     end
   end
 

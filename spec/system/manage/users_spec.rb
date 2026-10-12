@@ -108,8 +108,10 @@ RSpec.describe 'Manage > Users', type: :system do
 
         within(:active_content) do
           find('[data-type=new]').click
+        end
 
-          find('[name=organization_id] ~ .searchableSelect-main').fill_in with: '**'
+        in_modal do
+          find('[name=organization_id] ~ .searchableSelect-main').fill_in with: '*'
           expect(page).to have_css('ul.js-optionsList > li.js-option', minimum: 2)
           expect(page).to have_css('ul.js-optionsList > li.js-option .is-inactive', count: 1)
         end
@@ -341,6 +343,44 @@ RSpec.describe 'Manage > Users', type: :system do
       end
     end
 
+    describe 'password change hint' do
+      let(:hint) { 'The user will be notified of the password change by email.' }
+
+      it 'shows the hint while a password is entered' do
+        in_modal do
+          expect(page).to have_no_text(hint)
+
+          fill_in 'password', with: 'vXqXseF9L2ab'
+          expect(page).to have_text(hint)
+
+          fill_in 'password', with: '', fill_options: { clear: :backspace }
+          expect(page).to have_no_text(hint)
+        end
+      end
+
+      context 'when user has no email' do
+        let(:user) { create(:admin, login: 'no-email-admin', email: '') }
+
+        it 'shows the hint only once an email is entered' do
+          in_modal do
+            fill_in 'password', with: 'vXqXseF9L2ab'
+            expect(page).to have_no_text(hint)
+
+            fill_in 'Email', with: 'no-email-admin@example.com'
+            expect(page).to have_text(hint)
+          end
+        end
+      end
+
+      context 'when user edits themselves', authenticated_as: -> { user } do
+        it 'does not show the hint' do
+          in_modal do
+            fill_in 'password', with: 'vXqXseF9L2ab'
+            expect(page).to have_no_text(hint)
+          end
+        end
+      end
+    end
   end
 
   describe 'check user edit permissions', authenticated_as: -> { user } do
@@ -526,7 +566,7 @@ RSpec.describe 'Manage > Users', type: :system do
     it 'does not clear group permissions when setting user as active (#5727)' do
       expect(user.reload).to have_attributes(
         active: false,
-        groups: groups,
+        groups: match_array(groups),
       )
 
       click "tr[data-id='#{user.id}']"
@@ -545,8 +585,50 @@ RSpec.describe 'Manage > Users', type: :system do
 
       expect(user.reload).to have_attributes(
         active: true,
-        groups: groups,
+        groups: match_array(groups),
       )
+    end
+  end
+
+  # https://github.com/zammad/zammad/issues/2332
+  describe 'role filter does not offer inactive roles' do
+    let(:inactive_role) { create(:role, permission_names: %w[admin.group], active: false) }
+
+    before do
+      inactive_role
+
+      visit '#manage/users'
+    end
+
+    it 'does not show the inactive role in the role filter' do
+      within(:active_content) do
+        expect(page).to have_css('.userSearch')
+        expect(find('.userSearch')).to have_no_text(inactive_role.name)
+      end
+    end
+  end
+
+  # Ported from test/browser/manage_test.rb: a changed last name shows up in
+  #   the user list.
+  describe 'when updating the name of a user' do
+    let(:user) { create(:customer, firstname: 'Manage', lastname: 'Lastname') }
+
+    before do
+      user
+
+      visit '#manage/users'
+    end
+
+    it 'shows the changed last name in the user list' do
+      click "tr[data-id='#{user.id}']"
+
+      in_modal do
+        fill_in 'lastname', with: '2Manage Lastname 2'
+
+        click_on 'Submit'
+      end
+
+      expect(page).to have_css('table td', text: '2Manage Lastname 2')
     end
   end
 end

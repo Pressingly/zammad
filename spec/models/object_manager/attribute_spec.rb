@@ -1,8 +1,12 @@
 # Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
 require 'rails_helper'
+require 'models/concerns/has_audit_logs_examples'
 
 RSpec.describe ObjectManager::Attribute, type: :model do
+  it_behaves_like 'HasAuditLogs', update_attribute: 'display', update_value: 'Some updated display' do
+    subject { create(:object_manager_attribute_text) }
+  end
 
   describe 'callbacks' do
     context 'for setting default values on local data options' do
@@ -566,6 +570,52 @@ RSpec.describe ObjectManager::Attribute, type: :model do
       it 'raises an error' do
         expect { described_class.remove(object: 'Ticket', name: 'test5') }.to raise_error(RuntimeError, 'Ticket.test5 is referenced by Overview: Test Overview and thus cannot be deleted!')
       end
+    end
+  end
+
+  describe '#public_data_option' do
+    let(:attribute) do
+      build(:object_manager_attribute_autocompletion_ajax_external_data_source).tap do |attribute|
+        attribute.data_option.merge!(
+          'http_basic_auth_username'         => 'user',
+          'http_basic_auth_password'         => 'secret',
+          'http_basic_auth_password_confirm' => 'secret',
+          'bearer_token_auth'                => 'token',
+          'verify_ssl'                       => false,
+        )
+      end
+    end
+
+    it 'strips the external data source credentials', :aggregate_failures do
+      expect(attribute.public_data_option.keys)
+        .not_to include('search_url', 'search_result_list_key', 'search_result_value_key', 'search_result_label_key', 'http_basic_auth_username', 'http_basic_auth_password', 'http_basic_auth_password_confirm', 'bearer_token_auth', 'verify_ssl')
+
+      expect(attribute.public_data_option).to include('null' => true)
+    end
+
+    it 'keeps the stored data option untouched' do
+      expect { attribute.public_data_option }.not_to change(attribute, :data_option)
+    end
+  end
+
+  describe 'changing an existing multiselect attribute', db_strategy: :reset do
+    let(:attribute) { create(:object_manager_attribute_multiselect) }
+
+    before do
+      attribute
+      described_class.migration_execute
+    end
+
+    # Changing the maxlength of an attribute whose column is already in place
+    #   flags it for migration, so this goes through change_column rather than
+    #   add_column - the path an admin takes editing an existing attribute.
+    it 'migrates the already added column' do
+      changed = attribute.attributes.deep_symbolize_keys.except(:data_option_new)
+      changed[:data_option] = attribute.data_option.merge('maxlength' => 100)
+
+      described_class.add(changed)
+
+      expect { described_class.migration_execute }.not_to raise_error
     end
   end
 end

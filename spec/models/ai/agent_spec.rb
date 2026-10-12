@@ -1,6 +1,7 @@
 # Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
 require 'rails_helper'
+require 'models/concerns/has_audit_logs_examples'
 require 'models/application_model_examples'
 require 'models/concerns/has_xss_sanitized_note_examples'
 
@@ -8,6 +9,8 @@ RSpec.describe AI::Agent, aggregate_failures: true, current_user_id: 1, type: :m
   subject(:ai_agent) { create(:ai_agent, action_definition:) }
 
   let(:action_definition) { {} }
+
+  it_behaves_like 'HasAuditLogs', update_attribute: 'name', update_value: 'Some updated name'
 
   it_behaves_like 'ApplicationModel'
   it_behaves_like 'HasXssSanitizedNote', model_factory: :trigger
@@ -43,6 +46,51 @@ RSpec.describe AI::Agent, aggregate_failures: true, current_user_id: 1, type: :m
                  ))
           )
       end
+    end
+  end
+
+  describe '.from_performable_ids' do
+    let(:other_ai_agent) { create(:ai_agent) }
+
+    it 'returns a single configured id as an array (legacy single-select config)' do
+      trigger = create(:trigger, perform: { 'ai.ai_agent' => { 'ai_agent_id' => ai_agent.id.to_s } })
+
+      expect(described_class.from_performable_ids(trigger)).to eq([ai_agent.id])
+    end
+
+    it 'casts an integer id so it compares equal to a re-saved string id' do
+      trigger = create(:trigger, perform: { 'ai.ai_agent' => { 'ai_agent_id' => ai_agent.id } })
+
+      expect(described_class.from_performable_ids(trigger)).to eq([ai_agent.id])
+    end
+
+    it 'returns multiple configured ids' do
+      trigger = create(:trigger, perform: { 'ai.ai_agent' => { 'ai_agent_id' => [ai_agent.id.to_s, other_ai_agent.id.to_s] } })
+
+      expect(described_class.from_performable_ids(trigger)).to contain_exactly(ai_agent.id, other_ai_agent.id)
+    end
+
+    it 'ignores blank and duplicate entries' do
+      trigger = create(:trigger, perform: { 'ai.ai_agent' => { 'ai_agent_id' => [ai_agent.id.to_s, '', ai_agent.id.to_s] } })
+
+      expect(described_class.from_performable_ids(trigger)).to eq([ai_agent.id])
+    end
+  end
+
+  describe '.all_from_performable' do
+    let(:other_ai_agent) { create(:ai_agent) }
+
+    it 'returns all active agents referenced by the performable' do
+      trigger = create(:trigger, perform: { 'ai.ai_agent' => { 'ai_agent_id' => [ai_agent.id.to_s, other_ai_agent.id.to_s] } })
+
+      expect(described_class.all_from_performable(trigger)).to contain_exactly(ai_agent, other_ai_agent)
+    end
+
+    it 'excludes inactive agents' do
+      other_ai_agent.update!(active: false)
+      trigger = create(:trigger, perform: { 'ai.ai_agent' => { 'ai_agent_id' => [ai_agent.id.to_s, other_ai_agent.id.to_s] } })
+
+      expect(described_class.all_from_performable(trigger)).to contain_exactly(ai_agent)
     end
   end
 

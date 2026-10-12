@@ -1,0 +1,30 @@
+fragment knowledgeBaseAnswerTranslation on KnowledgeBaseAnswerTranslation {
+  id
+  title
+  visibility
+  categoryTreeTranslation {
+    id
+    title
+  }
+  content {
+    bodyExcerpt
+  }
+  answer {
+    id
+    archivedAt
+    publishedAt
+    internalAt
+    tags
+    # Only the id: the title comes from `categoryTreeTranslation` above, which has it in this
+    # translation's locale rather than in the one the query was made in.
+    category {
+      id
+    }
+  }
+  kbLocale {
+    systemLocale {
+      locale
+      name
+    }
+  }
+}

@@ -51,7 +51,6 @@ const testOptions: PermissionsParentOption[] = [
 
 const wrapperParameters = {
   form: true,
-  formField: true,
 }
 
 const renderPermissions = async (props: Record<string, unknown> = {}) => {
@@ -176,6 +175,26 @@ describe('Form - Field - Permissions', () => {
     const toggleSwitch = getByRole(permissions[1], 'switch')
 
     expect(toggleSwitch).toBeDisabled()
+  })
+
+  it('toggles the child options when a disabled parent option is clicked', async () => {
+    const wrapper = await renderPermissions()
+
+    expect(wrapper.queryByRole('group')).not.toBeInTheDocument()
+
+    const permissions = wrapper.getAllByRole('treeitem')
+
+    const [parentLabel] = getAllByTestId(permissions[1], 'common-label')
+
+    await wrapper.events.click(parentLabel)
+
+    const childGroup = wrapper.getByRole('group')
+
+    expect(getAllByRole(childGroup, 'treeitem')).toHaveLength(testOptions[1].children!.length)
+
+    await wrapper.events.click(parentLabel)
+
+    expect(childGroup).not.toBeVisible()
   })
 })
 

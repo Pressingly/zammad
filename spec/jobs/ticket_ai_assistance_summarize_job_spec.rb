@@ -6,10 +6,11 @@ RSpec.describe TicketAIAssistanceSummarizeJob, type: :job do
   describe '#perform' do
     let(:ticket)          { create(:ticket) }
     let(:locale)          { 'en' }
+    let(:current_user)    { create(:agent) }
     let(:regeneration_of) { nil }
 
     def perform
-      described_class.perform_now(ticket, locale, regeneration_of: nil)
+      described_class.perform_now(ticket, locale, current_user:, regeneration_of: nil)
     end
 
     before do
@@ -18,7 +19,7 @@ RSpec.describe TicketAIAssistanceSummarizeJob, type: :job do
     end
 
     context 'when Summarize service returns' do
-      let(:service_result) { AI::Service::Result.new(content:, ai_analytics_run:) }
+      let(:service_result) { Service::AI::Feature::Result[content:, ai_analytics_run:] }
       let(:content)          { nil }
       let(:ai_analytics_run) { nil }
 
@@ -33,7 +34,7 @@ RSpec.describe TicketAIAssistanceSummarizeJob, type: :job do
 
         expect(Service::Ticket::AIAssistance::Summarize)
           .to have_received(:execute)
-          .with(ticket:, locale:, regeneration_of:)
+          .with(ticket:, locale:, current_user:, regeneration_of:)
       end
 
       context 'when return is nil' do

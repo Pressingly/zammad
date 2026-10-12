@@ -91,13 +91,16 @@ RSpec.describe 'User Profile', type: :system do
     end
 
     it 'shows only first 3 organizations and loads more on demand' do
-      expect(page).to have_text(organizations[1].name)
-      expect(page).to have_text(organizations[2].name)
-      expect(page).to have_no_text(organizations[10].name)
+      # The secondary organization ids come without a defined order, only their number is stable.
+      shown_organizations = '.js-organizationList li:not(.js-showMoreOrganizations)'
 
-      click '.js-showMoreOrganizations a'
+      within :active_content do
+        expect(page).to have_css(shown_organizations, count: 3)
 
-      expect(page).to have_text(organizations[10].name)
+        click '.js-showMoreOrganizations a'
+
+        expect(page).to have_css(shown_organizations, count: organizations.size - 1)
+      end
     end
   end
 
@@ -115,6 +118,7 @@ RSpec.describe 'User Profile', type: :system do
 
     it 'does update when ticket changes' do
       expect(page).to have_text(ticket.title)
+      wait_for_authenticated_session
       ticket.update(title: SecureRandom.uuid)
       expect(page).to have_text(ticket.title)
     end
@@ -128,8 +132,11 @@ RSpec.describe 'User Profile', type: :system do
     end
 
     it 'does show all secondary organizations on edit' do
-      tokens = page.all('div[data-attribute-name="organization_ids"] .token')
-      expect(tokens.count).to eq(19)
+      # Secondary organizations are fetched via an async request (see
+      # User#secondaryOrganizations) and the token list is (re-)rendered once
+      # that resolves, so wait for it to settle instead of taking an instant
+      # snapshot with #all, which can catch a partially rendered token list.
+      expect(page).to have_css('div[data-attribute-name="organization_ids"] .token', count: 19)
     end
   end
 

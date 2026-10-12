@@ -6,10 +6,11 @@ import * as VueCompositionApi from 'vue';
 export type ReactiveFunction<TParam> = () => TParam;
 
 export const DetailSearchDocument = gql`
-    query detailSearch($search: String!, $onlyIn: EnumSearchableModels!, $limit: Int = 30, $offset: Int, $orderBy: String, $orderDirection: EnumOrderDirection) {
+    query detailSearch($search: String!, $onlyIn: EnumSearchableModels!, $filter: SelectorNodeInput, $limit: Int = 30, $offset: Int, $orderBy: String, $orderDirection: EnumOrderDirection) {
   search(
     search: $search
     onlyIn: $onlyIn
+    filter: $filter
     limit: $limit
     offset: $offset
     orderBy: $orderBy
@@ -17,6 +18,7 @@ export const DetailSearchDocument = gql`
   ) {
     totalCount
     items {
+      __typename
       ... on Ticket {
         id
         internalId
@@ -76,6 +78,23 @@ export const DetailSearchDocument = gql`
         name
         shared
         active
+      }
+      ... on KnowledgeBaseAnswerTranslation {
+        id
+        title
+        updatedAt
+        visibility
+        answer {
+          id
+          category {
+            id
+          }
+        }
+        kbLocale {
+          systemLocale {
+            locale
+          }
+        }
       }
     }
   }

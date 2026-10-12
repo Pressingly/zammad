@@ -4,6 +4,7 @@
 import { computed, defineAsyncComponent, ref } from 'vue'
 
 import { useAttachments } from '#shared/composables/useAttachments.ts'
+import { useReducedMotion } from '#shared/composables/useReducedMotion.ts'
 import type { TicketArticle } from '#shared/entities/ticket/types.ts'
 import { EnumTicketArticleSenderName } from '#shared/graphql/types.ts'
 
@@ -82,6 +83,8 @@ const inlineImages = ref<ViewerFile[]>([])
 const { showPreview } = useFilePreviewViewer(
   computed(() => [...inlineImages.value, ...articleAttachments.value]),
 )
+
+const { hasReducedMotion } = useReducedMotion()
 </script>
 
 <template>
@@ -100,10 +103,8 @@ const { showPreview } = useFilePreviewViewer(
     <UserPopoverWithTrigger
       class="absolute! bottom-0"
       :class="{
-        'ltr:-right-2.5 ltr:translate-x-full rtl:-left-2.5 rtl:-translate-x-full':
-          position === 'right',
-        'ltr:-left-2.5 ltr:-translate-x-full rtl:-right-2.5 rtl:translate-x-full':
-          position === 'left',
+        '-inset-e-2.5 ltr:translate-x-full rtl:-translate-x-full': position === 'right',
+        '-inset-s-2.5 ltr:-translate-x-full rtl:translate-x-full': position === 'left',
       }"
       :user="article.author"
       :popover-config="{
@@ -117,10 +118,11 @@ const { showPreview } = useFilePreviewViewer(
     />
 
     <div
-      class="grid w-full grid-rows-[0fr] overflow-hidden rounded-xl transition-[grid-template-rows]"
+      class="grid w-full grid-rows-[0fr] overflow-hidden rounded-xl transition-[grid-template-rows] print:grid-rows-[1fr]"
       :class="[
         {
           'grid-rows-[1fr]': showMetaInformation,
+          'transition-none': hasReducedMotion,
         },
         articleWrapperBorderClass,
       ]"
@@ -128,13 +130,16 @@ const { showPreview } = useFilePreviewViewer(
       <div
         :id="metaInformationRegionId"
         :aria-hidden="!showMetaInformation"
-        class="grid w-full grid-rows-[0fr] overflow-hidden"
+        class="grid max-w-full grid-rows-[0fr] overflow-hidden"
       >
         <Transition name="pseudo-transition">
           <ArticleBubbleHeader
-            v-if="showMetaInformation"
+            class="print:block print:border-b print:border-black"
             :aria-label="$t('Article meta information')"
-            :class="headerAndIconBarBackgroundClass"
+            :class="[
+              headerAndIconBarBackgroundClass,
+              { 'print:border-dashed!': hasInternalNote, hidden: !showMetaInformation },
+            ]"
             :show-meta-information="showMetaInformation"
             :position="position"
             :article="article"
@@ -152,7 +157,7 @@ const { showPreview } = useFilePreviewViewer(
       <ArticleBubbleMediaError :article="article" />
 
       <div
-        class="relative isolate"
+        class="relative isolate min-w-0 print:nth-2:rounded-t-xl"
         :class="{
           'nth-2:rounded-t-xl': !showMetaInformation,
           'nth-2:ltr:rounded-br-none nth-2:ltr:rounded-bl-xl nth-2:rtl:rounded-br-xl nth-2:rtl:rounded-bl-none':
@@ -185,6 +190,7 @@ const { showPreview } = useFilePreviewViewer(
       </div>
 
       <ArticleBubbleBlockedContentWarning
+        class="print:pt-3"
         :class="[
           dividerClass,
           bodyClasses,

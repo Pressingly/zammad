@@ -96,7 +96,10 @@ module CommonActions
   #
   # @return [String] the login of the currently logged in user.
   def current_login
-    find('.user-menu .user a')[:title]
+    # `> a` targets only the avatar link itself: during the first-login clues
+    #   intro the first clue opens the user dropdown, so a bare descendant
+    #   selector can become ambiguous with the then-visible dropdown entries.
+    find('.user-menu .user > a')[:title]
   end
 
   # Returns the User record for the currently logged in user.
@@ -177,9 +180,37 @@ module CommonActions
       route = "/desktop#{route}"
     end
 
-    super(route)
+    if same_document_navigation?(route)
+      # Navigating to another hash route of the already loaded app is a
+      #   same-document navigation, which never fires a load event -
+      #   chromedriver may still wait for one and block until its page load
+      #   timeout. Set the location via JS instead, which triggers the same
+      #   hashchange without a webdriver navigation.
+      page.execute_script('window.location.href = arguments[0]', route)
+    else
+      super(route)
+    end
 
     wait_for_loading_to_complete(route: route, app: app, skip_waiting: skip_waiting)
+  end
+
+  # A hash route target stays within the same document if the app is already
+  #   loaded at the root path and only the URL fragment changes. Visiting the
+  #   identical URL again is a reload and not a same-document navigation.
+  def same_document_navigation?(route)
+    return false if !route.start_with?('/#')
+
+    current = URI.parse(current_url)
+    app     = URI.parse(app_host)
+
+    return false if current.scheme != app.scheme || current.host != app.host
+
+    server_port = Capybara.current_session.server&.port
+    return false if server_port && current.port != server_port
+
+    current.path == '/' && current.query.nil? && current.fragment != route.delete_prefix('/#')
+  rescue URI::Error
+    false
   end
 
   def wait_for_loading_to_complete(route: nil, app: self.class.metadata[:app], skip_waiting: false, wait_ws: false)
@@ -286,7 +317,7 @@ module CommonActions
   def create_attribute(...)
     attribute = create(...)
     ObjectManager::Attribute.migration_execute
-    page.driver.browser.navigate.refresh
+    page.refresh
     attribute
   end
 
@@ -317,7 +348,7 @@ module CommonActions
 
     click '.sidebar-content .js-apply'
 
-    wait.until { Taskbar.last.updated_at != taskbar_timestamp } if !without_taskbar
+    wait(30).until { Taskbar.last.updated_at != taskbar_timestamp } if !without_taskbar
   end
 
   # Checks if modal is ready.
@@ -374,6 +405,37 @@ module CommonActions
     end
   end
 
+  # Runs the block in the given additional Capybara session, after making sure
+  #   the session's browser window matches the size configured for the example.
+  #   Second-session windows otherwise keep the driver's small default size, in
+  #   which parts of the UI (e.g. the footer buttons of container-local modals)
+  #   lie outside the viewport and are not interactable.
+  def using_session(name)
+    Capybara.using_session(name) do
+      ensure_browser_window_size
+
+      yield
+    end
+  end
+
+  def ensure_browser_window_size
+    expected = @zammad_browser_window_size
+    return if expected.blank?
+
+    # PLAYWRIGHT PILOT: no Selenium `manage` API - use Capybara's window abstraction.
+    if page.driver.is_a?(Capybara::Playwright::Driver)
+      window = page.current_window
+      window.resize_to(*expected) if window.size != expected
+
+      return
+    end
+
+    window = page.driver.browser.manage.window
+    return if [window.size.width, window.size.height] == expected
+
+    window.resize_to(*expected)
+  end
+
   # Show the popover on hover
   #
   # @example
@@ -385,16 +447,17 @@ module CommonActions
 
   # Scroll into view with javscript.
   #
-  # @param position [Symbol] :top or :bottom, position of the scroll into view
+  # @param position [Symbol] :top, :bottom, or :center, position of the scroll into view
   #
   # scroll_into_view('button.js-submit)
   #
   def scroll_into_view(css_selector_or_elem, position: :top)
+    js_arg = position == :center ? "{block:'center',inline:'nearest'}" : (position == :top).to_s
     case css_selector_or_elem
     when ZammadCapybaraElementDelegator, Capybara::Node::Element
-      css_selector_or_elem.execute_script("this.scrollIntoView(#{position == :top})")
+      css_selector_or_elem.execute_script("this.scrollIntoView(#{js_arg})")
     else
-      page.execute_script("document.querySelector('#{css_selector_or_elem}').scrollIntoView(#{position == :top})")
+      page.execute_script("document.querySelector('#{css_selector_or_elem}').scrollIntoView(#{js_arg})")
     end
     sleep 0.3
   end

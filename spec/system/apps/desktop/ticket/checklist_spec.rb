@@ -54,8 +54,9 @@ RSpec.describe 'Desktop > Ticket > Checklist', app: :desktop_view, authenticated
     using_session :agent2 do
       login(username: other_agent.login, password: 'test')
 
-      find('[role="searchbox"]').fill_in(with: it_title.first(5))
-      click_on it_title
+      visit "/tickets/#{Ticket.last.id}"
+      wait_for_form_to_settle("form-ticket-edit-#{Ticket.last.id}")
+
       add_article_to_it_ticket
       check_all_checkboxes
       close_ticket
@@ -65,7 +66,10 @@ RSpec.describe 'Desktop > Ticket > Checklist', app: :desktop_view, authenticated
         Ticket.last.reload.state.name == 'closed'
       end
 
-      page.driver.browser.close
+      # Simulate the second agent closing their browser.
+      #   Quit the driver directly: Capybara::Playwright::Driver#quit is private,
+      #   so Session#quit would silently skip it and leave the browser running.
+      page.driver.send(:quit)
     end
 
     close_and_verify
@@ -106,23 +110,30 @@ RSpec.describe 'Desktop > Ticket > Checklist', app: :desktop_view, authenticated
     open_checklist
 
     find('span', text: 'IT to-dos').click
-    find('#ticketSidebar input').fill_in with: ticket_hook(Ticket.last)
+    # Target the inline edit field via its placeholder: a bare 'input' selector is ambiguous
+    #   under Playwright, whose visibility check also counts the appearance-none checkbox inputs.
+    find('#ticketSidebar input[placeholder="Text or ticket identifier"]').fill_in with: ticket_hook(Ticket.last)
     find('#ticketSidebar button[aria-label="Save changes"]').click
     wait_for_gql('apps/desktop/pages/ticket/graphql/mutations/ticketChecklistItemUpsert.graphql')
   end
 
   def add_article_to_main_ticket
-    click_on('Reply to customer')
-    find_editor('Text').type('Some notes about the new employee onboarding.')
+    within 'main' do
+      find('button', text: 'Add internal note').click
+      find_editor('Text').type('Some notes about the new employee onboarding.')
+    end
 
     click_on 'Update'
     wait_for_gql('shared/entities/ticket/graphql/mutations/update.graphql')
   end
 
   def add_article_to_it_ticket
-    click_on('Reply to customer')
-    find_editor('Text').type('Some notes about the new employee onboarding.')
-    find_editor('Text').type("ping @@#{agent.firstname}")
+    within 'main' do
+      find('button', text: 'Add internal note').click
+      find_editor('Text').type('Some notes about the new employee onboarding.')
+      find_editor('Text').type("ping @@#{agent.firstname}")
+    end
+
     find('li', text: agent.fullname).click
     wait_for_form_updater
 
@@ -161,11 +172,19 @@ RSpec.describe 'Desktop > Ticket > Checklist', app: :desktop_view, authenticated
   end
 
   def close_ticket
-    find('button[aria-label="Ticket"]').click
+    dismiss_notification
+
+    find('#ticketSidebar + div button[aria-label="Ticket"]').click
 
     find_select('State').select_option('closed')
 
     click_on 'Update'
+  end
+
+  def dismiss_notification
+    find('button[aria-label="Hide notification"]', wait: 0).click
+  rescue Capybara::ElementNotFound
+    nil
   end
 
   def close_and_verify

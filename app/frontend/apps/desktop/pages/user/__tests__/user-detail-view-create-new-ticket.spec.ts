@@ -72,7 +72,7 @@ describe('User detail view: Create new ticket', () => {
     const view = await visitView('/users/2')
 
     const main = view.getByRole('main')
-    const header = within(main).getByTestId('user-detail-top-bar')
+    const header = within(main).getByTestId('user-detail-top-bar-full-details')
 
     mockFormUpdaterQuery({
       formUpdater: {
@@ -115,7 +115,7 @@ describe('User detail view: Create new ticket', () => {
       },
     })
 
-    await view.events.click(within(header).getByRole('menuitem', { name: 'New ticket' }))
+    await view.events.click(within(header).getByRole('button', { name: 'New ticket' }))
 
     const calls = await waitForFormUpdaterQueryCalls()
 

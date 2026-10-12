@@ -28,6 +28,11 @@ RSpec.configure do |config|
           }
         )
       end
+
+      # The EventMachine reactor above needs a moment to actually bind the port.
+      #   Wait for it to become reachable before running the example, otherwise the
+      #   browser's very first chat connection attempt may race the server startup.
+      wait_for_websocket_server!(port)
     end
 
     example.run
@@ -37,6 +42,11 @@ RSpec.configure do |config|
     example.example.set_exception(e)
   ensure
     stop_websocket_server(ws_thread) if server_required
+
+    # The websocket server is stopped without running its disconnect handling, so the
+    #   session entries of this example would leak into the following examples and
+    #   confuse those which rely on Sessions.sessions.
+    Sessions.sessions.each { |client_id| Sessions.destroy(client_id) }
   end
 
   def stop_websocket_server(ws_thread)
@@ -57,5 +67,17 @@ RSpec.configure do |config|
     end
   rescue Errno::EADDRINUSE
     raise "Couldn't start WebSocket server. Maybe another websocket server process is already running?"
+  end
+
+  def wait_for_websocket_server!(port, timeout: 10)
+    deadline = Time.current + timeout
+    begin
+      TCPSocket.new('127.0.0.1', port).close
+    rescue Errno::ECONNREFUSED
+      raise "WebSocket server did not start listening on port #{port} within #{timeout} seconds" if Time.current >= deadline
+
+      sleep 0.05
+      retry
+    end
   end
 end

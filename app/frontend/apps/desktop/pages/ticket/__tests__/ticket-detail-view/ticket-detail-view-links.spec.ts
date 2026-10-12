@@ -11,13 +11,12 @@ import { createDummyTicket } from '#shared/entities/ticket-article/__tests__/moc
 import { EnumLinkType } from '#shared/graphql/types.ts'
 import { convertToGraphQLId } from '#shared/graphql/utils.ts'
 
-import { mockTicketRelationAndRecentTicketListsQuery } from '#desktop/pages/ticket/graphql/queries/ticketRelationAndRecentTicketLists.mocks.ts'
-
 import {
   mockLinkAddMutation,
   waitForLinkAddMutationCalls,
-} from '../../graphql/mutations/linkAdd.mocks.ts'
-import { mockLinkListQuery } from '../../graphql/queries/linkList.mocks.ts'
+} from '#desktop/entities/link/graphql/mutations/linkAdd.mocks.ts'
+import { mockLinkListQuery } from '#desktop/entities/link/graphql/queries/linkList.mocks.ts'
+import { mockTicketRelationAndRecentTicketListsQuery } from '#desktop/pages/ticket/graphql/queries/ticketRelationAndRecentTicketLists.mocks.ts'
 
 describe('Ticket detail view links', () => {
   it('opens the links flyout and adds a link', async () => {
@@ -50,7 +49,7 @@ describe('Ticket detail view links', () => {
     expect(ticketMetaSidebar.getByText('Related tickets')).toBeInTheDocument()
     expect(ticketMetaSidebar.getByText('No links added yet.')).toBeInTheDocument()
 
-    await view.events.click(await view.findByRole('button', { name: 'Add link' }))
+    await view.events.click(await view.findByRole('button', { name: 'Link ticket' }))
 
     expect(await view.findByRole('heading', { name: 'Link tickets', level: 2 })).toBeInTheDocument()
 

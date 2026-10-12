@@ -2,6 +2,7 @@ query quickSearch($search: String!, $limit: Int = 10) {
   quickSearchOrganizations: search(search: $search, onlyIn: Organization, limit: $limit) {
     totalCount
     items {
+      __typename
       ... on Organization {
         id
         internalId
@@ -13,6 +14,7 @@ query quickSearch($search: String!, $limit: Int = 10) {
   quickSearchTickets: search(search: $search, onlyIn: Ticket, limit: $limit) {
     totalCount
     items {
+      __typename
       ... on Ticket {
         id
         internalId
@@ -26,9 +28,38 @@ query quickSearch($search: String!, $limit: Int = 10) {
       }
     }
   }
+  quickSearchKnowledgeBaseAnswers: search(
+    search: $search
+    onlyIn: KnowledgeBase__Answer__Translation
+    limit: $limit
+  ) {
+    totalCount
+    items {
+      __typename
+      ... on KnowledgeBaseAnswerTranslation {
+        id
+        title
+        visibility
+        kbLocale {
+          systemLocale {
+            locale
+          }
+        }
+        answer {
+          id
+          # Only the id, and only for the public help-site link the users who cannot open the
+          # agent answer view are sent to - see getKnowledgeBaseAnswerLink.
+          category {
+            id
+          }
+        }
+      }
+    }
+  }
   quickSearchUsers: search(search: $search, onlyIn: User, limit: $limit) {
     totalCount
     items {
+      __typename
       ... on User {
         id
         internalId

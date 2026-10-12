@@ -30,6 +30,11 @@ class User extends App.ControllerSubContent
       defaultOrder: 'DESC'
       searchBar: true
       searchQuery: @search_query
+      searchShortcuts: [
+        { query: 'active:false', label: __('Inactive only') }
+        { query: 'vip:true', label: __('VIP only') }
+        { query: 'last_login:>now-7d', label: __('Logged in within last 7 days') }
+      ]
       filterMenu: [
         {
           name: 'Roles',
@@ -171,7 +176,7 @@ class App.ControllerGenericIndexUser extends App.ControllerGenericIndex
           navupdate: '#users'
         genericObject: 'User'
         container: @el.closest('.content')
-        handlers: [removeGroupPermissions, hideOrganizationHelp]
+        handlers: [removeGroupPermissions, hideOrganizationHelp, App.FormHandlerUserPasswordChangeHint.run]
         screen: 'edit'
         veryLarge: true
         contentFormParams: ->

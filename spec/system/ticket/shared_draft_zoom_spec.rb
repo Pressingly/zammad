@@ -77,6 +77,10 @@ RSpec.describe 'Ticket Shared Draft Zoom', authenticated_as: :authenticate, type
       end
 
       it 'share button appears when other user creates draft' do
+        # Confirm WebSocket connection before creating the draft so the
+        # ChecksClientNotification broadcast is received by the browser.
+        ensure_websocket
+
         create(:ticket_shared_draft_zoom, ticket: ticket)
 
         expect(page).to have_selector :draft_share_button
@@ -144,6 +148,8 @@ RSpec.describe 'Ticket Shared Draft Zoom', authenticated_as: :authenticate, type
     it 'hides button when another user deletes' do
       visit "ticket/zoom/#{ticket_with_draft.id}"
 
+      ensure_websocket
+
       draft.destroy
 
       within :active_content do
@@ -202,7 +208,7 @@ RSpec.describe 'Ticket Shared Draft Zoom', authenticated_as: :authenticate, type
         click '.js-submit'
       end
 
-      expect(draft.reload.new_article[:body]).to match %r{another reply}
+      expect(draft.reload.new_article[:body]).to include('another reply')
     end
 
     context 'draft saved' do
@@ -231,7 +237,7 @@ RSpec.describe 'Ticket Shared Draft Zoom', authenticated_as: :authenticate, type
         click '.js-openDropdownMacro'
         click :draft_save_button
 
-        expect(draft.reload.new_article[:body]).to match %r{draft here}
+        expect(draft.reload.new_article[:body]).to include('draft here')
       end
 
       it 'shows overwrite warning when draft edited after loading' do
@@ -243,7 +249,7 @@ RSpec.describe 'Ticket Shared Draft Zoom', authenticated_as: :authenticate, type
           click '.js-submit'
         end
 
-        expect(draft.reload.new_article[:body]).to match %r{another reply}
+        expect(draft.reload.new_article[:body]).to include('another reply')
       end
     end
   end

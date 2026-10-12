@@ -16,6 +16,7 @@ interface Props {
   noLink?: boolean
   titleSize?: Sizes
   titleClass?: string
+  responsive?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -31,7 +32,11 @@ const { organizationDisplayName } = useOrganizationEntity(toRef(props, 'organiza
 </script>
 
 <template>
-  <div class="flex w-full items-center" :class="{ 'gap-2': !titleSize, 'gap-3': titleSize }">
+  <!-- 1024 container size plus 24 padding -=  -->
+  <div
+    class="flex w-full max-w-262 items-center"
+    :class="{ 'gap-2': !titleSize, 'gap-3': titleSize }"
+  >
     <component
       :is="avatarComponent"
       :class="{
@@ -40,7 +45,11 @@ const { organizationDisplayName } = useOrganizationEntity(toRef(props, 'organiza
       }"
       :link="!dense && !noLink ? `/organizations/${organization.internalId}` : undefined"
     >
-      <CommonOrganizationAvatar :entity="organization as AvatarOrganization" :size="size" />
+      <CommonOrganizationAvatar
+        :entity="organization as AvatarOrganization"
+        :responsive="responsive"
+        :size="size"
+      />
     </component>
     <component
       :is="nameComponent"
@@ -59,14 +68,17 @@ const { organizationDisplayName } = useOrganizationEntity(toRef(props, 'organiza
         {{ organizationDisplayName }}
       </CommonLabel>
     </component>
-    <CommonLabel
-      v-else
-      class="line-clamp-2! break-word"
-      :class="titleClass"
-      :size="titleSize ? titleSize : labelSize"
-    >
-      {{ organizationDisplayName }}
-    </CommonLabel>
+    <div v-else class="flex items-center">
+      <CommonLabel
+        class="line-clamp-2! break-word"
+        :class="titleClass"
+        :size="titleSize ? titleSize : labelSize"
+      >
+        {{ organizationDisplayName }}
+      </CommonLabel>
+      <slot name="label-trailing" />
+    </div>
+
     <slot name="actions" />
   </div>
 </template>

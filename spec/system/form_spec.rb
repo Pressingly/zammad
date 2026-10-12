@@ -4,6 +4,18 @@ require 'rails_helper'
 
 RSpec.describe 'Form', authenticated_as: true, type: :system do
 
+  # The email validation of the form submit endpoint performs live DNS lookups (check_mx: true).
+  #   The default resolver timeouts are unbounded enough that a slow or unresponsive DNS resolver
+  #   can hang the submit request beyond the Capybara wait budget, failing the examples which
+  #   expect a validation error for a non-existing domain. Bound the lookups so a misbehaving
+  #   resolver surfaces as a fast validation error instead of a hanging request.
+  around do |example|
+    EmailAddressValidator::Config.configure(dns_timeout: 5)
+    example.run
+  ensure
+    EmailAddressValidator::Config.configure(dns_timeout: nil)
+  end
+
   shared_examples 'validating form fields' do
     it 'validate name input' do
       within form_context do
@@ -51,9 +63,6 @@ RSpec.describe 'Form', authenticated_as: true, type: :system do
         fill_in 'Message', with: 'message here'
         fill_in 'Email', with: 'somebody@notexistinginanydomainspacealsonothere.nowhere'
 
-        # We need to wait 10 seconds, because otherwise we are detected as a robot.
-        sleep 10
-
         click_on 'Submit'
 
         expect(page).to have_css('.has-error [name=email]').and have_no_button(type: 'submit', disabled: true)
@@ -62,25 +71,14 @@ RSpec.describe 'Form', authenticated_as: true, type: :system do
   end
 
   shared_examples 'submitting valid form fields' do
-    it 'submits form filled slowly succesfully' do
+    it 'submits the form successfully' do
       within form_context do
         fill_in 'Name', with: 'some sender'
         fill_in 'Message', with: 'message here'
         fill_in 'Email', with: 'discard@discard.zammad.org'
-        sleep 10
         click_on 'Submit'
 
         expect(page).to have_text('Thank you for your inquiry')
-      end
-    end
-
-    it 'fails to submit form filled too fast' do
-      within form_context do
-        fill_in 'Name', with: 'some sender'
-        fill_in 'Message', with: 'message here'
-        fill_in 'Email', with: 'discard@discard.zammad.org'
-        click_on 'Submit'
-        accept_alert('Sorry, you look like a robot!')
       end
     end
   end
@@ -91,10 +89,11 @@ RSpec.describe 'Form', authenticated_as: true, type: :system do
         fill_in 'Name', with: 'some sender'
         fill_in 'Message', with: 'message here'
         fill_in 'Email', with: 'discard@discard.zammad.org'
-        sleep 10
-        # Avoid await_empty_ajax_queue.
-        execute_script('$("button:submit").trigger("click")')
-        accept_alert('The form could not be submitted!')
+        # Trigger inside the block: Playwright registers the alert handler up front.
+        accept_alert('The form could not be submitted!') do
+          # Avoid await_empty_ajax_queue.
+          execute_script('$("button:submit").trigger("click")')
+        end
       end
     end
   end
@@ -113,7 +112,17 @@ RSpec.describe 'Form', authenticated_as: true, type: :system do
 
       check_input_field_value('group_id', group.id.to_s, visible: :all)
 
-      wait.until { Setting.get('form_ticket_create_group_id') == group.id.to_s }
+      wait_for_setting('form_ticket_create_group_id', group.id.to_s)
+    end
+
+    it 'does not persist captcha options while no provider is selected' do
+      Setting.set('form_ticket_create_captcha_options', { 'secret' => 'unchanged' })
+
+      # simulate the change events a browser password manager fires on the hidden credential fields
+      execute_script("$('.js-spamProtection [name=secret]').trigger('change')")
+      await_empty_ajax_queue
+
+      expect(Setting.get('form_ticket_create_captcha_options')).to eq({ 'secret' => 'unchanged' })
     end
   end
 
@@ -165,7 +174,7 @@ RSpec.describe 'Form', authenticated_as: true, type: :system do
       before do
         visit 'channels/form'
         check 'form_ticket_create', allow_label_click: true
-        wait.until { Setting.get('form_ticket_create') == true }
+        wait_for_setting('form_ticket_create', true)
       end
 
       context 'when form is inline' do
@@ -208,13 +217,76 @@ RSpec.describe 'Form', authenticated_as: true, type: :system do
 
         it_behaves_like 'submitting fails due to throttling'
       end
+
+      context 'with honeypot protection' do
+        let(:form_context) { form_inline_selector }
+        let(:honeypot)     { "#{form_inline_selector} input[name='#{FormSpamProtection::Honeypot::FIELD_NAME}']" }
+
+        before do
+          Setting.set('form_ticket_create_honeypot', true)
+          visit path
+        end
+
+        it 'injects the off-screen honeypot field into the form' do
+          expect(page).to have_css(honeypot, visible: :all)
+        end
+
+        it 'rejects a submission that fills the honeypot field' do
+          within form_context do
+            fill_in 'Name', with: 'some sender'
+            fill_in 'Email', with: 'discard@discard.zammad.org'
+            fill_in 'Message', with: 'message here'
+          end
+
+          # the field is off-screen, so set it the way an automated client would
+          execute_script("document.querySelector(\"#{honeypot}\").value = 'http://spam.example.com'")
+
+          # Trigger inside the block: Playwright registers the alert handler up front.
+          accept_alert('Your submission could not be verified. Please make sure you completed any verification challenge and try again.') do
+            # Avoid await_empty_ajax_queue.
+            execute_script('$("button:submit").trigger("click")')
+          end
+
+          expect(page).to have_no_text('Thank you for your inquiry')
+        end
+      end
+
+      context 'with a CAPTCHA provider configured' do
+        let(:form_context) { form_inline_selector }
+
+        context 'when it renders a widget (Turnstile)' do
+          before do
+            Setting.set('form_ticket_create_captcha_provider', 'turnstile')
+            Setting.set('form_ticket_create_captcha_options', { 'sitekey' => 'site', 'secret' => 'secret' })
+            visit path
+          end
+
+          it 'injects the widget container with the configured site key' do
+            expect(page).to have_css("#{form_inline_selector} .cf-turnstile[data-sitekey='site']", visible: :all)
+          end
+        end
+
+        context 'when it is ALTCHA (server-issued challenge)' do
+          before do
+            Setting.set('form_ticket_create_captcha_provider', 'altcha')
+            visit path
+          end
+
+          it 'injects the widget pointed at the challenge endpoint', :aggregate_failures do
+            expect(page).to have_css("#{form_inline_selector} altcha-widget", visible: :all)
+
+            challenge = find("#{form_inline_selector} altcha-widget", visible: :all)['challenge']
+            expect(challenge).to end_with('/form_captcha_challenge')
+          end
+        end
+      end
     end
 
     context 'when feature is disabled' do
       before do
         visit 'channels/form'
         uncheck 'form_ticket_create', allow_label_click: true
-        wait.until { Setting.get('form_ticket_create') == false }
+        wait_for_setting('form_ticket_create', false)
         visit path
       end
 

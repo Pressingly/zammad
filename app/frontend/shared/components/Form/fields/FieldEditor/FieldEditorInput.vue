@@ -13,6 +13,7 @@ import { EXTENSION_NAME as userMentionExtensionName } from '#shared/components/F
 import {
   imageExtensionName,
   getCustomExtensions,
+  getDisabledExtensionNames,
   getHtmlExtensions,
   getPlainExtensions,
   PlaceholderExtensionName,
@@ -32,6 +33,7 @@ import type { FormFieldContext } from '#shared/components/Form/types/field.ts'
 import { getButtonGroup } from '#shared/components/ObjectAttributes/attributes/AttributeRichtext/initializeRichtextButtons.ts'
 import { useSessionStore } from '#shared/stores/session.ts'
 import { htmlCleanup } from '#shared/utils/htmlCleanup.ts'
+import testFlags from '#shared/utils/testFlags.ts'
 
 import { TableKitExtensionName } from './extensions/TableKit.ts'
 import { useInlineMode } from './useInlineMode.ts'
@@ -61,9 +63,7 @@ const actionBarComponent = getEditorComponents().actionBar
 const reactiveContext = toRef(props, 'context')
 const { currentValue } = useValue(reactiveContext)
 
-const disabledExtensions = Object.entries(props.context.meta || {})
-  .filter(([, value]) => value.disabled)
-  .map(([key]) => key as EditorCustomExtensions | string)
+const disabledExtensions = getDisabledExtensionNames(props.context.meta, props.context.extensionSet)
 
 const disableExtension = (extensionName: EditorCustomExtensions | string) => {
   if (disabledExtensions.includes(extensionName)) return
@@ -137,6 +137,13 @@ const {
   inputInlineDesktopTextStyles,
 } = useInlineMode(toRef(props, 'context'), wrapperElement)
 
+// Tracks edits since the last external content write, to distinguish an opening
+//   document setup (reset the cursor on signature apply) from an in-session change
+//   like a group switch while typing (keep the cursor position). The signature
+//   apply itself also emits an editor update - it must not count as a user edit.
+let userHasEditedContent = false
+let applyingSignature = false
+
 const editor = useEditor({
   extensions: editorExtensions.value,
   textDirection: 'auto',
@@ -196,6 +203,8 @@ const editor = useEditor({
       ? htmlCleanup(currentValue.value)
       : currentValue.value,
   onUpdate({ editor }) {
+    if (!applyingSignature) userHasEditedContent = true
+
     const value = getEditorContent(editor as Editor, contentType.value)
     props.context.node.input(value)
 
@@ -243,6 +252,37 @@ watch(
   },
 )
 
+const { addSignature, removeSignature, reconcileSignature } = useSignatureHandling(editor)
+
+// Signature handling is engaged statically per editor usage: the field schema either
+//   declares the signatureEnabled prop (ticket article body) or the usage has no
+//   signature semantics at all (profile notes, KB, admin) - then nothing is wired up.
+const signatureHandlingEngaged = props.context.signatureEnabled !== undefined
+
+const signatureTarget = computed(
+  () => (props.context.signatureEnabled && props.context.signature) || null,
+)
+
+const syncSignature = (resetCursor = false) => {
+  if (!signatureHandlingEngaged) return
+
+  // The reconcile dispatches its transactions synchronously.
+  applyingSignature = true
+  try {
+    reconcileSignature(signatureTarget.value, { resetCursor })
+  } finally {
+    applyingSignature = false
+  }
+}
+
+if (signatureHandlingEngaged) {
+  // React to a late arriving signature (form updater response) and to article type or
+  //   group changes. Content writes and mount are handled at their own call sites.
+  //   On an untouched document the apply belongs to the form opening (e.g. the article
+  //   type flips to email after the reply quote was written) - reset the cursor then.
+  watch(signatureTarget, () => syncSignature(!userHasEditedContent), { flush: 'post' })
+}
+
 const setEditorContent = (
   content: string | undefined,
   contentType: EditorContentType,
@@ -255,10 +295,15 @@ const setEditorContent = (
   })
 }
 
+// tiptap creates the editor only on mount, a value written before is applied then.
+let contentWrittenBeforeMount: string | undefined
+
 // Set the new editor content, when the value was changed from outside (e.g. form schema update).
 const updateValueKey = props.context.node.on('input', ({ payload: newContent }) => {
-  // Early return when no editor exists, keep this in mind, when we have real initial value problems.
-  if (!editor.value) return
+  if (!editor.value) {
+    contentWrittenBeforeMount = newContent
+    return
+  }
 
   const currentContent = getEditorContent(editor.value, contentType.value)
 
@@ -266,6 +311,12 @@ const updateValueKey = props.context.node.on('input', ({ payload: newContent }) 
   if (newContent === currentContent) return
 
   setEditorContent(newContent, contentType.value, true)
+
+  // An external content write replaces the whole document and thereby destroys any
+  //   applied signature - reconcile it afterwards (e.g. reply/forward quote writes).
+  //   It also resets the edit tracking: the document is a fresh setup again.
+  userHasEditedContent = false
+  syncSignature(true)
 })
 
 // Convert the current editor content, if the content type changed from outside (e.g. form schema update).
@@ -288,6 +339,8 @@ onUnmounted(() => {
 const focusEditor = () => {
   const view = editor.value?.view
   view?.focus()
+
+  testFlags.set(`${props.context.formId}.${props.context.node.name}.editor.focused`)
 }
 
 // focus editor when clicked on its label
@@ -310,8 +363,6 @@ const characters = computed(() => {
   })
 })
 
-const { addSignature, removeSignature } = useSignatureHandling(editor)
-
 const editorCustomContext = {
   _loaded: true,
   getEditorValue: (type: EditorContentType) => {
@@ -332,7 +383,19 @@ onMounted(() => {
   onLoad.forEach((fn) => fn(editorCustomContext))
   onLoad.length = 0
 
+  if (contentWrittenBeforeMount !== undefined) {
+    setEditorContent(contentWrittenBeforeMount, contentType.value, true)
+    contentWrittenBeforeMount = undefined
+    userHasEditedContent = false
+  }
+
+  // The editor may mount after the article form is already set up (async import,
+  //   late dialog rendering) - reconcile the signature it may have missed (#804).
+  syncSignature(true)
+
   if (VITE_TEST_MODE) {
+    testFlags.set(`${props.context.formId}.${props.context.node.name}.editor.ready`)
+
     if (!('editors' in globalThis)) Object.defineProperty(globalThis, 'editors', { value: {} })
     Object.defineProperty(Reflect.get(globalThis, 'editors'), props.context.node.name, {
       value: editor.value,

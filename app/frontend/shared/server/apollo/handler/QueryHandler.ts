@@ -1,7 +1,7 @@
 // Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 import { getOperationName } from '@apollo/client/utilities'
 import { useApolloClient } from '@vue/apollo-composable'
-import { watch, nextTick, computed } from 'vue'
+import { watch, computed } from 'vue'
 
 import { useOnEmitter } from '#shared/composables/useOnEmitter.ts'
 import { BaseHandler } from '#shared/server/apollo/handler/BaseHandler.ts'
@@ -69,6 +69,29 @@ export default class QueryHandler<
       // vue-apollo may briefly yield undefined result even when the cache is
       // complete — keep showing the loader until the result ref is populated.
       return this.operationResult.result.value === undefined
+    })
+  }
+
+  /**
+   * Resolves once the query has settled its first load — a result was received
+   * (or served from the cache) or it errored. Handy to await a reactive
+   * `useQuery` handler (e.g. in a route guard) before reading its result;
+   * resolves immediately when it has already settled. Unlike
+   * `watchOnceOnResult`, it also resolves on an error, so an awaiting caller
+   * never hangs.
+   */
+  public loaded(): Promise<void> {
+    const loading = this.loadingWithoutCachedResult()
+
+    if (!loading.value) return Promise.resolve()
+
+    return new Promise((resolve) => {
+      const stop = watch(loading, (isLoading) => {
+        if (isLoading) return
+
+        stop()
+        resolve()
+      })
     })
   }
 
@@ -292,20 +315,7 @@ export default class QueryHandler<
     )
   }
 
-  public onResult(
-    callback: (result: ApolloQueryResult<TResult | undefined>) => void,
-    ignoreFirstResult?: boolean,
-  ): void {
-    if (ignoreFirstResult) {
-      this.watchOnceOnResult(() => {
-        nextTick(() => {
-          this.operationResult.onResult(callback)
-        })
-      })
-
-      return
-    }
-
-    this.operationResult.onResult(callback)
+  public onResult(callback: (result: ApolloQueryResult<TResult | undefined>) => void) {
+    return this.operationResult.onResult(callback)
   }
 }

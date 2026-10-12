@@ -41,12 +41,16 @@ import { usePopover } from '#desktop/components/CommonPopover/usePopover.ts'
 import CommonPopoverMenu from '#desktop/components/CommonPopoverMenu/CommonPopoverMenu.vue'
 import type { MenuItem } from '#desktop/components/CommonPopoverMenu/types.ts'
 import CommonSkeleton from '#desktop/components/CommonSkeleton/CommonSkeleton.vue'
-import CommonTabGroup from '#desktop/components/CommonTabGroup/CommonTabGroup.vue'
-import { useTabGroup } from '#desktop/components/CommonTabGroup/useTabGroup.ts'
 import CommonAdvancedTable from '#desktop/components/CommonTable/CommonAdvancedTable.vue'
 import CommonSimpleTable from '#desktop/components/CommonTable/CommonSimpleTable.vue'
 import CommonTableSkeleton from '#desktop/components/CommonTable/Skeleton/CommonTableSkeleton.vue'
 import type { TableAdvancedItem } from '#desktop/components/CommonTable/types.ts'
+import CommonNavigationTabs from '#desktop/components/CommonTabs/CommonNavigationTabs/CommonNavigationTabs.vue'
+import CommonTabGroup from '#desktop/components/CommonTabs/CommonTabGroup/CommonTabGroup.vue'
+import {
+  KnowledgeBaseAccess,
+  type KnowledgeBasePermissionRow,
+} from '#desktop/components/Form/fields/FieldKnowledgeBasePermissions/types.ts'
 import LayoutContent from '#desktop/components/layout/LayoutContent.vue'
 import SplitButton from '#desktop/components/SplitButton/SplitButton.vue'
 import ThemeSwitch from '#desktop/components/ThemeSwitch/ThemeSwitch.vue'
@@ -529,6 +533,27 @@ const buttonGroupOptions: CommonButtonItem[] = [
 
 const application = useApplicationStore()
 
+// The second role shows a locked row: it inherits editor from the parent, so nothing below
+//   may override it.
+const kbPermissionRows: KnowledgeBasePermissionRow[] = [
+  {
+    roleId: '1',
+    roleName: 'Admin',
+    inheritedAccess: null,
+    allowedAccesses: [
+      KnowledgeBaseAccess.Editor,
+      KnowledgeBaseAccess.Reader,
+      KnowledgeBaseAccess.None,
+    ],
+  },
+  {
+    roleId: '2',
+    roleName: 'Agent',
+    inheritedAccess: KnowledgeBaseAccess.Editor,
+    allowedAccesses: [KnowledgeBaseAccess.Editor],
+  },
+]
+
 const formSchema = defineFormSchema([
   {
     type: 'rating',
@@ -649,6 +674,28 @@ const formSchema = defineFormSchema([
           }
         }
       `,
+    },
+  },
+  {
+    type: 'kbCategoryIcon',
+    name: 'kb_category_icon',
+    label: 'Knowledge Base Category Icon',
+    props: {
+      // Pinned, so the catalog does not depend on how the knowledge base is themed.
+      iconSet: 'FontAwesome',
+    },
+    value: 'f115',
+  },
+  {
+    type: 'kbPermissions',
+    name: 'kb_permissions',
+    label: 'Knowledge Base Permissions',
+    props: {
+      permissionRows: kbPermissionRows,
+    },
+    value: {
+      '1': 'editor',
+      '2': 'editor',
     },
   },
   {
@@ -1258,9 +1305,29 @@ const changeRowSimple = () => {
   tableItems[0].role = tableItems[0].role ? '' : 'Member'
 }
 
-const { activeTab } = useTabGroup<string>()
+const activeTab = ref()
 
-const { activeTab: activeFilters } = useTabGroup<string[]>()
+const activeFilters = ref()
+
+const activeTabOverflow = ref<string>()
+const activeFiltersOverflow = ref<string[]>()
+
+const activeNavTabScroll = ref<string>()
+const activeNavTabOverflow = ref<string>()
+
+const playgroundNavTabs = [
+  { label: 'Overview', key: 'overview', link: '/' },
+  { label: 'My Tickets', key: 'my-tickets', link: '/' },
+  { label: 'Unassigned', key: 'unassigned', link: '/' },
+  { label: 'Open', key: 'open', link: '/' },
+  { label: 'Pending', key: 'pending', link: '/' },
+  { label: 'Escalated', key: 'escalated', link: '/' },
+  { label: 'Closed', key: 'closed', link: '/' },
+  { label: 'Spam', key: 'spam', link: '/' },
+  { label: 'All Tickets', key: 'all-tickets', link: '/' },
+]
+
+const playgroundTabItems = playgroundNavTabs.map(({ label, key }) => ({ label, key }))
 
 const popoverOrientation: Ref<Orientation> = ref('autoVertical')
 const popoverOrientationOptions = [
@@ -1667,6 +1734,13 @@ const { openFeedbackDialog } = useFeedbackDialog()
 
       <div>
         <h2>Labels</h2>
+
+        <CommonLabel size="xs" prefix-icon="logo" suffix-icon="logo-flat">
+          Extra small
+        </CommonLabel>
+
+        <br />
+
         <CommonLabel size="small" prefix-icon="logo" suffix-icon="logo-flat"> Small </CommonLabel>
 
         <br />
@@ -1980,7 +2054,7 @@ const { openFeedbackDialog } = useFeedbackDialog()
                 },
                 {
                   key: 'personal-setting',
-                  label: 'Profile settings',
+                  label: 'Personal settings',
                   link: '/personal-setting',
                   icon: 'user-settings',
                 },
@@ -2115,44 +2189,102 @@ const { openFeedbackDialog } = useFeedbackDialog()
         <pre
           class="flex flex-wrap gap-5 rounded-lg bg-blue-200 p-5 font-mono text-sm text-wrap text-gray-100 dark:bg-gray-700 dark:text-neutral-400"
         >
-          {{ formValues }}</pre
-        >
+          {{ formValues }}</pre>
       </div>
 
-      <h3>Tabs Groups</h3>
-      <CommonTabGroup
-        v-model="activeTab"
-        class="mb-4"
-        :tabs="[
-          { label: 'Tab 1', key: 'tab-1' },
-          { label: 'Tab 2', default: true, key: 'tab-2' },
-          { label: 'Tab 3', key: 'tab-3' },
-        ]"
-      />
+      <section class="mb-6">
+        <h2>Tab Rendering Modes</h2>
 
-      <h3>Search Entities</h3>
-      <CommonTabGroup
-        v-model="activeTab"
-        class="mb-4"
-        size="medium"
-        :tabs="[
-          { label: 'Organization', count: 5, key: 'organization' },
-          { label: 'Ticket', default: true, count: 5, key: 'ticket' },
-          { label: 'User', key: 'user', count: 2 },
-        ]"
-      />
+        <h3 class="mb-2">1. Tab Group — Single Select (scroll + marker pill)</h3>
+        <p class="mb-2 text-sm text-gray-500">
+          <code>CommonTabGroup</code> — single selection, animated marker pill, scrollable with
+          arrow buttons when overflowing.
+        </p>
+        <div class="mb-4 w-96">
+          <CommonTabGroup v-model="activeTab" :tabs="playgroundTabItems" select-first-by-default />
+        </div>
+        <pre class="mb-6 rounded bg-blue-100 px-3 py-1 font-mono text-xs dark:bg-gray-700">
+active: {{ activeTab }}</pre>
 
-      <h3>Filter Selector</h3>
-      <CommonTabGroup
-        v-model="activeFilters"
-        label="Roles"
-        :tabs="[
-          { label: 'Admin', key: 'admin' },
-          { label: 'Agent', key: 'agent' },
-          { label: 'Customer', key: 'customer' },
-        ]"
-        multiple
-      />
+        <h3 class="mb-2">2. Tab Group — Multi Select (scroll, no marker)</h3>
+        <p class="mb-2 text-sm text-gray-500">
+          <code>CommonTabGroup multiple</code> — multi-selection filter style, no marker pill,
+          scrollable when overflowing.
+        </p>
+        <div class="mb-4 w-96">
+          <CommonTabGroup
+            v-model="activeFilters"
+            label="Filters"
+            :tabs="playgroundTabItems"
+            multiple
+          />
+        </div>
+        <pre class="mb-6 rounded bg-blue-100 px-3 py-1 font-mono text-xs dark:bg-gray-700">
+active: {{ activeFilters }}</pre>
+
+        <h3 class="mb-2">3. Tab Group — Single Select (overflow menu)</h3>
+        <p class="mb-2 text-sm text-gray-500">
+          <code>CommonTabGroup mode="overflow"</code> — visible tabs fill the container; any that
+          don't fit collapse into a popover menu.
+        </p>
+        <div class="mb-4 w-96">
+          <CommonTabGroup
+            v-model="activeTabOverflow"
+            :tabs="playgroundTabItems"
+            mode="overflow"
+            select-first-by-default
+          />
+        </div>
+        <pre class="mb-6 rounded bg-blue-100 px-3 py-1 font-mono text-xs dark:bg-gray-700">
+active: {{ activeTabOverflow }}</pre>
+
+        <h3 class="mb-2">4. Tab Group — Multi Select (overflow menu)</h3>
+        <p class="mb-2 text-sm text-gray-500">
+          <code>CommonTabGroup multiple mode="overflow"</code> — multi-selection filter style; any
+          tabs that don't fit collapse into a popover menu.
+        </p>
+        <div class="mb-4 w-96">
+          <CommonTabGroup
+            v-model="activeFiltersOverflow"
+            label="Filters"
+            :tabs="playgroundTabItems"
+            multiple
+            mode="overflow"
+          />
+        </div>
+        <pre class="mb-6 rounded bg-blue-100 px-3 py-1 font-mono text-xs dark:bg-gray-700">
+active: {{ activeFiltersOverflow }}</pre>
+
+        <h3 class="mb-2">5. Navigation Tabs — Scroll Mode</h3>
+        <p class="mb-2 text-sm text-gray-500">
+          <code>CommonNavigationTabs mode="scroll"</code> — tabs scroll horizontally; left/right
+          arrow buttons appear when the list overflows.
+        </p>
+        <div class="mb-4 w-96">
+          <CommonNavigationTabs
+            v-model="activeNavTabScroll"
+            :tabs="playgroundNavTabs"
+            mode="scroll"
+          />
+        </div>
+        <pre class="mb-6 rounded bg-blue-100 px-3 py-1 font-mono text-xs dark:bg-gray-700">
+active: {{ activeNavTabScroll }}</pre>
+
+        <h3 class="mb-2">6. Navigation Tabs — Overflow Menu</h3>
+        <p class="mb-2 text-sm text-gray-500">
+          <code>CommonNavigationTabs mode="overflow"</code> — visible tabs fill the container; any
+          that don't fit collapse into a popover menu.
+        </p>
+        <div class="mb-4 w-96">
+          <CommonNavigationTabs
+            v-model="activeNavTabOverflow"
+            :tabs="playgroundNavTabs"
+            mode="overflow"
+          />
+        </div>
+        <pre class="mb-6 rounded bg-blue-100 px-3 py-1 font-mono text-xs dark:bg-gray-700">
+active: {{ activeNavTabOverflow }}</pre>
+      </section>
 
       <h3>Split Button</h3>
       <div class="mb-3 flex justify-end gap-3">

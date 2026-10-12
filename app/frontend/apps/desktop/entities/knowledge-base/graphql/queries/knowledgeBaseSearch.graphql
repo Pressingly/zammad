@@ -1,0 +1,63 @@
+query knowledgeBaseSearch(
+  $query: String!
+  $categoryId: ID
+  $locale: String
+  $pageSize: Int = 30
+  $cursor: String
+) {
+  knowledgeBaseSearch(
+    query: $query
+    categoryId: $categoryId
+    locale: $locale
+    first: $pageSize
+    after: $cursor
+  ) {
+    totalCount
+    edges {
+      node {
+        item {
+          ... on KnowledgeBaseAnswer {
+            id
+            visibility
+            translation(locale: $locale) {
+              id
+              title
+              kbLocale {
+                id
+                systemLocale {
+                  locale
+                }
+              }
+            }
+          }
+          ... on KnowledgeBaseCategory {
+            id
+            translation(locale: $locale) {
+              id
+              title
+            }
+            categoryIcon
+            iconSet
+            visibility(locale: $locale)
+          }
+        }
+        titlePreview {
+          text
+          highlight
+        }
+        bodyPreview {
+          text
+          highlight
+        }
+        categoryPath {
+          id
+          title(locale: $locale)
+        }
+      }
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}

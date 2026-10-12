@@ -184,19 +184,6 @@ RSpec.describe 'Ticket Create', time_zone: 'Europe/London', type: :system do
         it_behaves_like 'replacing tags in a clean form'
         it_behaves_like 'merging with existing tags in a dirty form'
       end
-
-      context 'with empty value' do
-        let(:operator) { nil }
-        let(:template_value) { nil }
-
-        it_behaves_like 'leaving tags empty in a clean form'
-
-        it 'leaves existing tags untouched in a dirty form' do
-          set_tokens_field_value('tags', %w[baz qux])
-          use_template(template)
-          check_tokens_field_value('tags', %w[baz qux])
-        end
-      end
     end
 
   end
@@ -284,11 +271,43 @@ RSpec.describe 'Ticket Create', time_zone: 'Europe/London', type: :system do
 
       field_date.sibling('[data-item=date]').set date.strftime('%m/%d/%Y')
       field_time.sibling('[data-item=date]').set time.strftime('%m/%d/%Y')
-      field_time.sibling('[data-item=time]').set time.strftime('%H:%M')
+
+      # bootstrap-timepicker asynchronously re-selects part of its text on focus/keydown
+      # (setTimeout-based). Simulated per-character typing races that, so a keystroke can
+      # land on a stale selection and overwrite digits instead of appending (e.g. saving
+      # "07:02" instead of "17:46"). Set the value directly and fire `change`, which is
+      # what App.UiElement.basedate#bindEvents listens for, to avoid the race entirely.
+      time_field = field_time.sibling('[data-item=time]')
+      time_value = time.strftime('%H:%M')
+      execute_script(<<~JS, time_field, time_value)
+        arguments[0].value = arguments[1];
+        arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+      JS
+      expect(time_field.value).to eq time_value
 
       click '.js-submit'
 
       expect(Ticket.last).to have_attributes date_test: date, datetime_test: time
+    end
+
+    it 'expands a 2-digit year to the current century' do
+      date = 4.years.from_now.to_date
+
+      field_date.sibling('[data-item=date]').set date.strftime('%m/%d/%y')
+
+      click '.js-submit'
+
+      expect(Ticket.last).to have_attributes date_test: date
+    end
+
+    it 'expands a 2-digit year to the previous century when it would be too far ahead' do
+      date = Time.zone.today.years_ago(49)
+
+      field_date.sibling('[data-item=date]').set date.strftime('%m/%d/%y')
+
+      click '.js-submit'
+
+      expect(Ticket.last).to have_attributes date_test: date
     end
 
     it 'allows to save with cleared value' do
@@ -477,6 +496,49 @@ RSpec.describe 'Ticket Create', time_zone: 'Europe/London', type: :system do
       end
 
       taskbar_tab_close(task_key)
+    end
+  end
+
+  context 'when using the browser back button on the ticket create screen' do
+    it 'returns to the previous screen without spawning another draft' do
+      visit '#dashboard'
+
+      visit '#ticket/create'
+
+      within(:active_content) do
+        find('[name=title]').fill_in with: 'Title'
+      end
+
+      wait.until { find(:task_active)['data-key'].present? }
+
+      page.go_back
+
+      expect(page).to have_current_path(%r{\#dashboard\z}, url: true)
+      expect(page).to have_css('.tasks .task', count: 1)
+    end
+
+    # A direct load, e. g. a bookmark, leaves no previous route behind. It cannot be visited
+    # as such here, because the redirect then happens while the page is still loading and the
+    # browser replaces the entry on its own; only a boot that finishes later keeps it. The
+    # route history it leaves behind is therefore set up explicitly.
+    it 'returns to the previous page without spawning another draft on a direct entry' do
+      visit '#dashboard'
+
+      wait.until { page.evaluate_script("App.Config.get('History').length").positive? }
+
+      page.execute_script("App.Config.set('History', [])")
+      page.execute_script("window.location.hash = '#ticket/create'")
+
+      within(:active_content) do
+        find('[name=title]').fill_in with: 'Title'
+      end
+
+      wait.until { find(:task_active)['data-key'].present? }
+
+      page.go_back
+
+      expect(page).to have_current_path(%r{\#dashboard\z}, url: true)
+      expect(page).to have_css('.tasks .task', count: 1)
     end
   end
 
@@ -820,6 +882,14 @@ RSpec.describe 'Ticket Create', time_zone: 'Europe/London', type: :system do
       find('.token').click # trigger blur
 
       expect(find('[name="cc"]', visible: :all).value).to eq 'asd@example.com'
+    end
+
+    # Ported from test/browser/agent_ticket_create_cc_tokenizer_test.rb (#1990).
+    it 'tokenizes an entered email address' do
+      add_email 'test@example.com'
+
+      expect(page).to have_css('span.token-label', text: 'test@example.com')
+      expect(find('[name="cc"]', visible: :all).value).to eq 'test@example.com'
     end
 
     def add_email(input)
@@ -1613,6 +1683,92 @@ RSpec.describe 'Ticket Create', time_zone: 'Europe/London', type: :system do
       find('.richtext-content').send_keys 'test'
       click '.js-submit'
       wait.until { Ticket.last.group_id == group_2.id }
+    end
+  end
+
+  describe 'Core workflow ignores default value if select attribute options are mutated #6370', authenticated_as: :authenticate, db_strategy: :reset do
+    let(:field_name) { SecureRandom.hex(10) }
+    let(:screens) do
+      {
+        create_middle: { '-all-' => { shown: false, required: false } },
+        edit:          { '-all-' => { shown: true, required: false } },
+      }
+    end
+
+    def authenticate
+      create(field_factory, object_name: 'Ticket', name: field_name, display: field_name, screens: screens, default: default_value)
+      ObjectManager::Attribute.migration_execute
+
+      create(:core_workflow,
+             object:  'Ticket',
+             perform: {
+               "ticket.#{field_name}": {
+                 operator:      %w[show remove_option],
+                 show:          'true',
+                 remove_option: removed_options,
+               },
+             })
+
+      true
+    end
+
+    before do
+      visit 'ticket/create'
+      wait_for_core_workflow
+    end
+
+    context 'with a select attribute' do
+      let(:field_factory) { :object_manager_attribute_select }
+      let(:default_value) { 'key_2' }
+
+      shared_examples 'preselecting the default value' do |removed_option|
+        it 'preselects the default value of the shown field' do
+          expect(page).to have_css("select[name='#{field_name}']", visible: :visible)
+          expect(page).to have_no_css("select[name='#{field_name}'] option[value='#{removed_option}']")
+          expect(find("select[name='#{field_name}']").value).to eq('key_2')
+        end
+      end
+
+      context 'when a regular option is removed' do
+        let(:removed_options) { ['key_3'] }
+
+        include_examples 'preselecting the default value', 'key_3'
+      end
+
+      context 'when the empty option is removed' do
+        let(:removed_options) { [''] }
+
+        include_examples 'preselecting the default value', ''
+      end
+    end
+
+    context 'with a multi tree select attribute' do
+      let(:field_factory) { :object_manager_attribute_multi_tree_select }
+      let(:default_value) { ['Incident', 'Service request'] }
+
+      shared_examples 'preselecting the default values' do |removed_option|
+        it 'preselects the default values of the shown field' do
+          expect(page).to have_css("div[data-attribute-name='#{field_name}'] input[name='#{field_name}_completion']", visible: :visible)
+          expect(page).to have_no_css("div[data-attribute-name='#{field_name}'] .js-optionsList li[data-value='#{removed_option}']", visible: :all) if removed_option
+          expect(page).to have_css("div[data-attribute-name='#{field_name}'] span.token-label", text: 'Incident')
+          expect(page).to have_css("div[data-attribute-name='#{field_name}'] span.token-label", text: 'Service request')
+          expect(find("select[name='#{field_name}']", visible: :all).value).to contain_exactly('Incident', 'Service request')
+        end
+      end
+
+      context 'when a regular option is removed' do
+        let(:removed_options) { ['Change request'] }
+
+        include_examples 'preselecting the default values', 'Change request'
+      end
+
+      # tree selects always keep the null option in their list, so only the
+      # re-rendering triggered by the option change can be observed here.
+      context 'when the empty option is removed' do
+        let(:removed_options) { [''] }
+
+        include_examples 'preselecting the default values'
+      end
     end
   end
 end

@@ -15,7 +15,6 @@ import type {
   TicketFieldsType,
   TicketArticleAction,
   TicketArticleActionPlugin,
-  TicketArticleSelectionOptions,
   TicketArticleType,
 } from './types.ts'
 
@@ -29,19 +28,6 @@ const canReplyAll = (article: TicketArticle) => {
     .filter((address) => address.emailAddress && !address.isSystemAddress)
     .map((address) => address.emailAddress)
   return uniq(foreignRecipients).length > 1
-}
-
-const addSignature = ({ body }: TicketArticleSelectionOptions, position?: number) => {
-  // Get signature from form props (set by form updater)
-  const { signature } = body
-
-  if (!signature) return body.removeSignature()
-
-  body.addSignature({
-    renderedBody: signature.renderedBody,
-    internalId: signature.internalId,
-    position,
-  })
 }
 
 const actionPlugin: TicketArticleActionPlugin = {
@@ -66,7 +52,7 @@ const actionPlugin: TicketArticleActionPlugin = {
           apps: ['mobile', 'desktop'],
           name: 'email-reply',
           view: { agent: ['change'] },
-          label: __('Reply'),
+          label: sender === EnumTicketArticleSenderName.Agent ? __('Follow up') : __('Reply'),
           icon: 'reply',
           alwaysVisible: true,
           perform: (t, a, o) => replyToEmail(t, a, o, config),
@@ -87,7 +73,8 @@ const actionPlugin: TicketArticleActionPlugin = {
         apps: ['mobile', 'desktop'],
         name: 'email-reply-all',
         view: { agent: ['change'] },
-        label: __('Reply all'),
+        label:
+          sender === EnumTicketArticleSenderName.Agent ? __('Follow up to all') : __('Reply all'),
         icon: 'reply-alt',
         alwaysVisible: true,
         perform: (t, a, o) => replyToEmail(t, a, o, config, true),
@@ -148,20 +135,8 @@ const actionPlugin: TicketArticleActionPlugin = {
       icon: 'mail',
       view: { agent: ['change'] },
       fields,
-      onDeselected(_, { body }) {
-        body.removeSignature()
-      },
-      onOpened(_, { body }) {
-        // solve the issue in firefox that the signature is not inserted
-        // always reset position if reply is added as a new article
-        requestAnimationFrame(() => {
-          addSignature({ body }, 1)
-        })
-      },
-      onSelected(_, { body }) {
-        // try to dynamically set cursor position, depending on where it was before signature was added
-        addSignature({ body })
-      },
+      // The editor applies and removes the group signature itself, based on this flag.
+      signature: true,
       internal: false,
       performReply(ticket) {
         return {

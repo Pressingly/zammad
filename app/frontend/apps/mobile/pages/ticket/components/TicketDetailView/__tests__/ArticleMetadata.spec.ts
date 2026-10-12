@@ -4,11 +4,14 @@ import { getAllByRole, waitFor } from '@testing-library/vue'
 
 import { getByIconName } from '#tests/support/components/iconQueries.ts'
 import { renderComponent } from '#tests/support/components/index.ts'
+import { mockApplicationConfig } from '#tests/support/mock-applicationConfig.ts'
 import { mockGraphQLApi } from '#tests/support/mock-graphql-api.ts'
+import { nullableMock } from '#tests/support/utils.ts'
 
 import { ObjectManagerFrontendAttributesDocument } from '#shared/entities/object-attributes/graphql/queries/objectManagerFrontendAttributes.api.ts'
 import type { TicketArticle } from '#shared/entities/ticket/types.ts'
-import { EnumSecurityStateType, type TicketArticleSecurityState } from '#shared/graphql/types.ts'
+import { EnumSecurityStateType } from '#shared/graphql/types.ts'
+import type { DeepPartial } from '#shared/types/utils.ts'
 
 import { ticketArticleObjectAttributes } from '#mobile/entities/ticket/__tests__/mocks/ticket-mocks.ts'
 import { defaultArticles } from '#mobile/pages/ticket/__tests__/mocks/detail-view.ts'
@@ -17,6 +20,7 @@ import ArticleMetadataDialog from '../ArticleMetadataDialog.vue'
 
 // parsed is tested in unit test
 const getAddress = (raw: string) => ({
+  __typename: 'AddressesField' as const,
   raw,
   parsed: null,
 })
@@ -43,7 +47,9 @@ describe('visuals for metadata', () => {
       cc: getAddress('Joe Mike <joe.mike@zammad.org>'),
       replyTo: getAddress('Arthur Miller <arthur.miller@zammad.org>'),
       type: {
+        __typename: 'TicketArticleType',
         name: 'email',
+        communication: true,
       },
       detectedLanguage: 'de',
       createdAt,
@@ -114,14 +120,17 @@ describe('visuals for metadata', () => {
 })
 
 describe('rendering security field', () => {
-  const mockArticle = (security: TicketArticleSecurityState): TicketArticle => ({
-    ...defaultArticles().firstArticles!.edges[0].node,
-    internalId: 1,
-    securityState: {
-      __typename: 'TicketArticleSecurityState',
-      ...security,
-    },
-  })
+  const mockArticle = (
+    security: DeepPartial<NonNullable<TicketArticle['securityState']>>,
+  ): TicketArticle =>
+    nullableMock<TicketArticle>({
+      ...defaultArticles().firstArticles!.edges[0].node,
+      internalId: 1,
+      securityState: {
+        __typename: 'TicketArticleSecurityState',
+        ...security,
+      },
+    })
 
   describe('renders type', () => {
     it('renders S/MIME type when provided', () => {
@@ -322,5 +331,85 @@ describe('rendering WhatsApp metadata', () => {
       expect(messageStatus).toHaveTextContent('read by the customer')
       expect(getByIconName(messageStatus, 'check-double-circle')).toBeInTheDocument()
     })
+  })
+})
+
+describe('rendering accounted time', () => {
+  const mockArticle = (
+    timeUnit: TicketArticle['timeUnit'],
+    accountedTimeType?: string,
+  ): TicketArticle =>
+    nullableMock<TicketArticle>({
+      ...defaultArticles().firstArticles!.edges[0].node,
+      internalId: 1,
+      timeUnit,
+      accountedTimeType: accountedTimeType
+        ? { __typename: 'TicketTimeAccountingType', name: accountedTimeType }
+        : null,
+    })
+
+  const renderDialog = (timeUnit: TicketArticle['timeUnit'], accountedTimeType?: string) =>
+    renderComponent(ArticleMetadataDialog, {
+      props: {
+        name: 'article',
+        article: mockArticle(timeUnit, accountedTimeType),
+        ticketInternalId: 2,
+      },
+      router: true,
+      store: true,
+    })
+
+  it('renders the accounted time with the configured unit', () => {
+    mockApplicationConfig({ time_accounting_unit: 'minute' })
+
+    const view = renderDialog(5)
+
+    expect(view.getByRole('region', { name: 'Accounted time' })).toHaveTextContent('5.00 minute(s)')
+  })
+
+  it('renders the accounted time alone when no unit is configured', () => {
+    mockApplicationConfig({ time_accounting_unit: '' })
+
+    const view = renderDialog(1.5)
+
+    expect(view.getByRole('region', { name: 'Accounted time' })).toHaveTextContent(/1\.50$/)
+  })
+
+  it('does not render the accounted time when there is none', () => {
+    const view = renderDialog(null)
+
+    expect(view.queryByRole('region', { name: 'Accounted time' })).not.toBeInTheDocument()
+  })
+
+  it('renders the activity type together with the accounted time', () => {
+    mockApplicationConfig({ time_accounting_unit: 'minute', time_accounting_types: true })
+
+    const view = renderDialog(5, 'Billing')
+
+    const accountedTime = view.getByRole('region', { name: 'Accounted time' })
+
+    expect(accountedTime).toHaveTextContent('5.00 minute(s)')
+    expect(accountedTime).toHaveTextContent('for activity type')
+    expect(accountedTime).toHaveTextContent('Billing')
+  })
+
+  it('does not render the activity type when the feature is disabled', () => {
+    mockApplicationConfig({ time_accounting_unit: 'minute', time_accounting_types: false })
+
+    const view = renderDialog(5, 'Billing')
+
+    expect(view.getByRole('region', { name: 'Accounted time' })).toHaveTextContent(
+      /5\.00 minute\(s\)$/,
+    )
+  })
+
+  it('does not render the activity type when there is none', () => {
+    mockApplicationConfig({ time_accounting_unit: 'minute', time_accounting_types: true })
+
+    const view = renderDialog(5)
+
+    expect(view.getByRole('region', { name: 'Accounted time' })).toHaveTextContent(
+      /5\.00 minute\(s\)$/,
+    )
   })
 })

@@ -1,11 +1,11 @@
 # Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
-require_dependency 'tasks/zammad/command.rb'
+require 'tasks/zammad/package_command'
 
 module Tasks
   module Zammad
     module Package
-      class Install < Tasks::Zammad::Command
+      class Install < Tasks::Zammad::PackageCommand
 
         def self.usage
           "#{super} /path/to/package.zpm"
@@ -18,6 +18,8 @@ module Tasks
         ARGUMENT_COUNT = 1
 
         def self.task_handler
+          abort_in_container_environment!
+
           filename = ArgvHelper.argv[1]
           if filename.blank?
             abort "Error: Please provide a valid filename: #{usage}"

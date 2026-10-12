@@ -1,9 +1,24 @@
 # Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
 require 'rails_helper'
+require 'models/concerns/has_audit_logs_examples'
 require 'models/concerns/has_xss_sanitized_note_examples'
 
 RSpec.describe Webhook, type: :model do
+  it_behaves_like 'HasAuditLogs', update_attribute: 'name', update_value: 'Some updated name'
+
+  describe 'audit log sensitive values masking' do
+    subject(:webhook) { create(:webhook, basic_auth_username: 'user', basic_auth_password: 'secret_password') }
+
+    before do
+      Setting.set('system_init_done', true)
+    end
+
+    it 'masks sensitive attributes in audit log snapshots' do
+      expect(AuditLog.find_by(auditable_type: 'Webhook', auditable_id: webhook.id, action_type: 'create').value_to)
+        .to include('basic_auth_password' => SensitiveParamsHelper::SENSITIVE_MASK)
+    end
+  end
 
   it_behaves_like 'HasXssSanitizedNote', model_factory: :webhook
 
@@ -255,6 +270,18 @@ RSpec.describe Webhook, type: :model do
                    message: 'This object is referenced by other object(s) and thus cannot be deleted: %s',
                    content: eq(["Trigger / #{trigger.name} (##{trigger.id})"])
                  ))
+          )
+      end
+    end
+
+    context 'when referenced as one of multiple webhooks' do
+      let!(:trigger) { create(:trigger, perform: { 'notification.webhook' => { 'webhook_id' => [webhook.id.to_s, '999'] } }) }
+
+      it 'raises error with details' do
+        expect { webhook.destroy }
+          .to raise_exception(
+            be_an_instance_of(Exceptions::UnprocessableContent)
+            .and(have_attributes(content: eq(["Trigger / #{trigger.name} (##{trigger.id})"])))
           )
       end
     end

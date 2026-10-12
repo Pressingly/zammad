@@ -6,9 +6,11 @@ import { computed, toRef, useTemplateRef, type Ref } from 'vue'
 
 import type { User } from '#shared/graphql/types.ts'
 
+import { useStickyTopCalculator } from '#desktop/components/Form/fields/FieldEditor/useStickyTopCalculator.ts'
 import { useElementScroll } from '#desktop/composables/useElementScroll.ts'
-import { useTopBarHeaderHover } from '#desktop/composables/useTopBarHeaderHover.ts'
-import TopBarHeader from '#desktop/pages/user/components/UserDetailTopBar/TopBarHeader.vue'
+import { useOffsetBottomWithin } from '#desktop/composables/useOffsetBottomWithin.ts'
+import TopBarHeaderCompact from '#desktop/pages/user/components/UserDetailTopBar/TopBarHeaderCompact.vue'
+import TopBarHeaderFull from '#desktop/pages/user/components/UserDetailTopBar/TopBarHeaderFull.vue'
 
 interface Props {
   user: User
@@ -18,40 +20,65 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const headerElement = useTemplateRef('header')
+const headerWithDetailsElement = useTemplateRef('header-with-details')
+const headerWithHiddenDetailsElement = useTemplateRef('header-with-hidden-details')
 
-const { height: headerHeight } = useElementSize(headerElement, undefined, {
+const { height: headerWithDetailsHeight } = useElementSize(headerWithDetailsElement, undefined, {
   box: 'border-box',
 })
 
+const { height: headerWithHiddenDetailsHeight } = useElementSize(
+  headerWithHiddenDetailsElement,
+  undefined,
+  {
+    box: 'border-box',
+  },
+)
+
 const { width } = useElementSize(toRef(props, 'contentContainerElement'))
 const { y } = useElementScroll(toRef(props, 'contentContainerElement') as Ref<HTMLDivElement>)
-
-const { containerEventHandlers, isHovering } = useTopBarHeaderHover([headerElement])
 
 const containerWidth = computed(() => (width.value ? `${width.value}px` : 'auto'))
 
 // Show the header earlier to always have it visible
 const NEGATIVE_PADDING = -30
 
-const absoluteContainerOffset = computed(() => {
-  const offset = y.value - (headerHeight.value + NEGATIVE_PADDING)
-  return `${offset > 0 ? 0 : offset}px`
-})
+const compactHeaderOffset = computed(
+  () => y.value - (headerWithDetailsHeight.value + NEGATIVE_PADDING),
+)
+
+const hasMeasuredHeaderHeights = computed(
+  () => headerWithDetailsHeight.value > 0 && headerWithHiddenDetailsHeight.value > 0,
+)
+
+const titleLineBottom = useOffsetBottomWithin(
+  () => headerWithHiddenDetailsElement.value?.titleLine,
+  headerWithHiddenDetailsElement,
+)
+
+// The compact header is stacked above the full header, so it takes over as soon as any of its title
+// line is in view, before it has fully slid into place - content may be too short to scroll that far.
+// Interactivity/a11y exposure switches at the same point, so exactly one header is ever exposed.
+const isCompactHeaderVisible = computed(
+  () => hasMeasuredHeaderHeights.value && compactHeaderOffset.value + titleLineBottom.value > 0,
+)
+
+const absoluteContainerOffset = computed(() => `${Math.min(0, compactHeaderOffset.value)}px`)
 
 const stickyContainerTop = computed(() => {
-  if (isHovering.value) return '0px'
-  if (y.value < headerHeight.value) return `-${y.value}px`
-  return `-${headerHeight.value}px`
+  if (y.value < headerWithDetailsHeight.value) return `-${y.value}px`
+  return `-${headerWithDetailsHeight.value}px`
 })
+
+// 7px is needed to compensate some overlap
+useStickyTopCalculator(headerWithHiddenDetailsHeight, { offset: 7 })
 </script>
 
 <template>
-  <TopBarHeader
+  <TopBarHeaderCompact
+    ref="header-with-hidden-details"
     class="absolute top-0 right-0 left-0 z-30 bg-neutral-50/80 backdrop-blur-2xs dark:bg-gray-500/80"
-    :class="{ '-z-10! opacity-0': isHovering }"
-    aria-hidden="true"
-    :hide-details="true"
+    :inert="!isCompactHeaderVisible"
     :user="user"
     :user-display-name="userDisplayName"
     data-test-id="user-detail-top-bar-clipped-details"
@@ -59,20 +86,17 @@ const stickyContainerTop = computed(() => {
       transform: `translateY(${absoluteContainerOffset})`,
       width: containerWidth,
     }"
-    v-on="containerEventHandlers"
   />
 
-  <TopBarHeader
-    ref="header"
-    class="sticky top-0 right-0 left-0 z-20 w-full bg-neutral-50/80 backdrop-blur-2xs dark:bg-gray-500/80"
-    :class="{ 'transition-[top]': isHovering }"
-    :hide-details="false"
+  <TopBarHeaderFull
+    ref="header-with-details"
+    class="sticky top-0 right-0 left-0 z-20 w-full min-w-xs bg-neutral-50/80 backdrop-blur-2xs dark:bg-gray-500/80"
+    :inert="isCompactHeaderVisible"
     :user="user"
     :user-display-name="userDisplayName"
-    data-test-id="user-detail-top-bar"
+    data-test-id="user-detail-top-bar-full-details"
     :style="{
       top: stickyContainerTop,
     }"
-    v-on="containerEventHandlers"
   />
 </template>

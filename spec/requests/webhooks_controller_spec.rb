@@ -2,7 +2,7 @@
 
 require 'rails_helper'
 
-RSpec.describe Webhook, type: :request do
+RSpec.describe WebhooksController, type: :request do
   let(:agent) { create(:agent) }
   let(:admin) { create(:admin) }
 
@@ -32,6 +32,18 @@ RSpec.describe Webhook, type: :request do
         context 'with agent permissions', authenticated_as: :agent do
           it 'request is forbidden' do
             expect(response).to have_http_status(:forbidden)
+          end
+        end
+
+        context 'without configured authentication' do
+          let!(:webhooks) { create_list(:webhook, 1) }
+
+          it 'does not mask unset sensitive fields' do
+            expect(json_response.first).to include(
+              'signature_token'     => nil,
+              'basic_auth_password' => nil,
+              'bearer_token'        => nil
+            )
           end
         end
       end
@@ -108,6 +120,14 @@ RSpec.describe Webhook, type: :request do
 
       it 'returns created' do
         expect(response).to have_http_status(:created)
+      end
+
+      it 'does not mask unset sensitive fields' do
+        expect(json_response).to include(
+          'signature_token'     => nil,
+          'basic_auth_password' => nil,
+          'bearer_token'        => nil
+        )
       end
 
       context 'with agent permissions', authenticated_as: :agent do

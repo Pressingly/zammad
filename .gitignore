@@ -109,6 +109,7 @@
 **/node_modules
 yarn-error.log
 .yarn/cache
+/.pnpm-store
 
 # Cypress
 .dev/cypress/screenshots/*
@@ -122,6 +123,8 @@ schema.graphql
 
 # Packages
 *.zpm
+!.gitlab/docker/*.zpm
+/packages/
 
 # Devcontainer
 /.devcontainer/with-mailserver/certs/*
@@ -137,6 +140,10 @@ schema.graphql
 /.agents/skills
 /.claude/skills
 /.claude/settings.local.json
+
+# Codegraph
+/.codegraph/
+/.mcp.json
 
 # graphify knowledge graph (generated locally; rebuilt on commit via post-commit hook)
 graphify-out/

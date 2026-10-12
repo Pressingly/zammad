@@ -45,10 +45,22 @@ class App.KnowledgeBase extends App.Model
   categories: ->
     App.KnowledgeBaseCategory.all().filter (item) => item.knowledge_base_id == @id
 
-  rootCategories: ->
-    @categories()
-      .filter (item) -> item.parent_id is null
-      .sort (a, b) -> a.position - b.position
+  # Ordered in the knowledge base's own `category_sorting_mode`: the top level lists categories only
+  #   and so carries the category mode alone, under the same name a category keeps it under.
+  #
+  # @param kb_locale [App.KnowledgeBaseLocale, undefined] the locale being browsed, which the
+  #   alphabetical and last-update modes read a title and a date from. Undefined falls back to the
+  #   primary locale, exactly as the displayed title does.
+  rootCategories: (kb_locale) ->
+    App.KnowledgeBaseSorting.categories(
+      @unsortedRootCategories()
+      @category_sorting_mode
+      kb_locale
+    )
+
+  # See App.KnowledgeBaseCategory#unsortedChildren.
+  unsortedRootCategories: ->
+    @categories().filter (item) -> item.parent_id is null
 
   kb_locales: ->
     App.KnowledgeBaseLocale.findAll(@kb_locale_ids)
@@ -60,14 +72,14 @@ class App.KnowledgeBase extends App.Model
     @
 
   isEmpty: ->
-    @rootCategories().length is 0
+    @unsortedRootCategories().length is 0
 
   @translatableClass: -> App.KnowledgeBaseTranslation
   @translatableForeignKey: -> 'knowledge_base_id'
   @extend App.KnowledgeBaseTranslatable
 
   remove: (options = {}) ->
-    @rootCategories().forEach (elem) -> elem.remove(options)
+    @unsortedRootCategories().forEach (elem) -> elem.remove(options)
     @removeTranslations(options)
     super
 
@@ -84,7 +96,7 @@ class App.KnowledgeBase extends App.Model
                        else
                          0
 
-    @rootCategories().reduce (memo, elem) ->
+    @rootCategories(options.kb_locale).reduce (memo, elem) ->
       memo.concat elem.categoriesForDropdown(nested: initialNestLevel, kb_locale: options.kb_locale)
     , initial
 
@@ -114,7 +126,7 @@ class App.KnowledgeBase extends App.Model
 
   removeAssetsIfNeeded: (data) =>
     removeAnswers    = _.difference @loadedAnswerIds(), data.answer_ids
-    removeCategories = _.difference @loadedAnswerIds(), data.category_ids
+    removeCategories = _.difference @loadedCategoryIds(), data.category_ids
 
     for answer_id in removeAnswers
       App.KnowledgeBaseAnswer.find(answer_id)?.remove(clear: true)
@@ -268,7 +280,7 @@ class App.KnowledgeBase extends App.Model
       display: __('Icon Set')
       tag:     'iconset_picker'
       style:   'block'
-      help:    __('Every category in your knowledge base should be given a unique icon for maximum visual clarity. Each set below provides a wide range of icons to choose from, but beware: You can\'t mix and match different icons from different sets. Choose carefully!')
+      help:    __('Every category in your knowledge base should be given a unique icon for maximum visual clarity. Each set below provides a wide range of icons to choose from, but beware: You can\'t mix and match different icons from different sets. Switching the set later resets all category icons to the default icon of the new set, so choose carefully!')
       null:    false
       screen:
         admin_style_iconset:

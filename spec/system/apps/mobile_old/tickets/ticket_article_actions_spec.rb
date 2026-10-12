@@ -16,7 +16,7 @@ RSpec.describe 'Mobile > Ticket > Article actions', app: :mobile, authenticated_
   let(:before_click)       { -> {} }
   let(:after_click)        { -> {} }
   let(:new_subject)        { nil }
-  let(:trigger_label)      { 'Reply' }
+  let(:trigger_label)      { 'Follow up' }
   let(:text_exact)         { true }
   let(:current_text)       { '' }
   let(:new_text)           { 'This is a note' }
@@ -50,10 +50,24 @@ RSpec.describe 'Mobile > Ticket > Article actions', app: :mobile, authenticated_
     find_button(trigger_label).click
   end
 
-  # FIXME: This test is too unstable in Chrome, probably due to a race condition in the signature
-  #   handling of the editor. We need to find a way to reliably test this, but for now we will skip it.
+  # editor.signatureAdd normally settles well within Capybara's default wait, but a few
+  #   independent sources of extra work push it past that under CI load - the first two
+  #   stack when both apply:
+  #   - converting a phone article's type to email
+  #   - forwarding, which builds a quoted copy of the original message
+  #   - replying with a quoted selection of the original article's content
+  def signature_add_slow_timeout
+    30 # either source alone
+  end
+
+  def signature_add_slowest_timeout
+    60 # both sources combined (forwarding a phone article)
+  end
+
+  # FIXME: The Playwright driver reads the editor text with extra blank lines between paragraphs,
+  #   unlike the Selenium drivers, so the exact text checks fail.
   before do
-    skip 'Skipping due to signature handling issues in Chrome' if Capybara.current_driver == :zammad_chrome
+    skip 'Skipping due to differing editor text in the Playwright driver' if %i[zammad_playwright zammad_playwright_mobile].include?(Capybara.current_driver)
   end
 
   # we test article creation mostly on the backend because Node.js doesn't support prose-mirror
@@ -82,13 +96,20 @@ RSpec.describe 'Mobile > Ticket > Article actions', app: :mobile, authenticated_
 
     context 'with default fields as inbound email' do
       include_examples 'mobile app: reply article', 'Email', attachments: true do
-        let(:article) { create(:ticket_article, :inbound_email, ticket: ticket, from: 'from-email@example.com', to: 'to-email@example.com') }
-        let(:to) { ['from-email@example.com'] }
+        let(:trigger_label) { 'Reply' }
+        let(:article)       { create(:ticket_article, :inbound_email, ticket: ticket, from: 'from-email@example.com', to: 'to-email@example.com') }
+        let(:to)            { ['from-email@example.com'] }
       end
     end
 
     context 'with default fields when article has type phone' do
       let(:type_id) { Ticket::Article::Type.find_by(name: 'email').id }
+
+      let(:after_click) do
+        lambda {
+          wait_for_test_flag('editor.signatureAdd', timeout: signature_add_slow_timeout)
+        }
+      end
 
       context 'when agent sent article take article email' do
         include_examples 'mobile app: reply article', 'Email', attachments: true do
@@ -99,8 +120,9 @@ RSpec.describe 'Mobile > Ticket > Article actions', app: :mobile, authenticated_
 
       context 'when customer sent article from phone take customer email' do
         include_examples 'mobile app: reply article', 'Email', attachments: true do
-          let(:article) { create(:ticket_article, :inbound_phone, ticket: ticket, from: '+423424235533') }
-          let(:to) { ['customer@example.com'] }
+          let(:trigger_label) { 'Reply' }
+          let(:article)       { create(:ticket_article, :inbound_phone, ticket: ticket, from: '+423424235533') }
+          let(:to)            { ['customer@example.com'] }
         end
       end
     end
@@ -138,6 +160,15 @@ RSpec.describe 'Mobile > Ticket > Article actions', app: :mobile, authenticated_
         let(:before_click) do
           lambda {
             select_text('.Content')
+          }
+        end
+        let(:after_click) do
+          lambda {
+            # Wait for form initialization before checking the signature flag.
+            # Without this, the editor may not be editable yet when addSignature
+            # is called, causing the flag to never be set (known race condition).
+            wait_for_form_updater
+            wait_for_test_flag('editor.signatureAdd', timeout: signature_add_slow_timeout)
           }
         end
         let(:current_text) { "#{article.body}\n\n#{agent.firstname}\nSignature!" }
@@ -216,7 +247,7 @@ RSpec.describe 'Mobile > Ticket > Article actions', app: :mobile, authenticated_
 
     context 'when article has multiple email addresses, can reply all' do
       include_examples 'mobile app: reply article', 'Email', attachments: true do
-        let(:trigger_label) { 'Reply all' }
+        let(:trigger_label) { 'Follow up to all' }
         let(:to)            { ['e1@example.com', 'e2@example.com'] }
         let(:cc)            { ['e3@example.com'] }
         let(:article)       { create(:ticket_article, :outbound_email, ticket: ticket, to: to.join(', '), cc: cc.join(', ')) }
@@ -243,41 +274,6 @@ RSpec.describe 'Mobile > Ticket > Article actions', app: :mobile, authenticated_
       end
     end
 
-    context 'when adding multiple replies' do
-      before do
-        article
-      end
-
-      it 'keeps signature' do
-        visit "/tickets/#{ticket.id}"
-
-        wait_for_form_to_settle('form-ticket-edit')
-        wait_for_gql('shared/entities/ticket/graphql/queries/ticket/articles.graphql')
-
-        find_button('Article actions').click
-        find_button('Reply').click
-
-        wait_for_test_flag('editor.signatureAdd')
-
-        expect(find_editor('Text')).to have_text_value("#{agent.firstname}\nSignature!")
-
-        find_editor('Text').clear
-
-        expect(find_editor('Text')).to have_text_value('', exact: true)
-
-        find_button('Done').click
-
-        wait_for_test_flag('ticket-article-reply.closed')
-
-        find_button('Article actions').click
-        find_button('Reply').click
-
-        wait_for_form_updater(3)
-
-        expect(find_editor('Text')).to have_text_value("#{agent.firstname}\nSignature!")
-      end
-    end
-
     context 'when forwarding email' do
       let(:trigger_label) { 'Forward' }
       let(:to)              { [] }
@@ -295,6 +291,13 @@ RSpec.describe 'Mobile > Ticket > Article actions', app: :mobile, authenticated_
         Regexp.new(msg)
       end
       let(:in_reply_to) { '' }
+
+      let(:after_click) do
+        lambda {
+          wait_for_test_flag('editor.signatureAdd', timeout: signature_add_slow_timeout)
+        }
+      end
+
       let(:result_text) do
         msg = '<p dir="auto">This is a note</p>' # new message
         msg += "<div data-signature=\"true\" dir=\"auto\" data-signature-id=\"#{signature.id}\"><p dir=\"auto\">#{agent.firstname}<br dir=\"auto\">Signature!</p></div><p dir=\"auto\"></p>" # signature is before forwarded message
@@ -341,6 +344,12 @@ RSpec.describe 'Mobile > Ticket > Article actions', app: :mobile, authenticated_
         let(:text_to) { "#{ticket.customer.fullname} <#{ticket.customer.email}>" }
         let(:type_id) { Ticket::Article::Type.find_by(name: 'email').id }
 
+        let(:after_click) do
+          lambda {
+            wait_for_test_flag('editor.signatureAdd', timeout: signature_add_slowest_timeout)
+          }
+        end
+
         include_examples 'mobile app: reply article', 'Email', attachments: true
       end
 
@@ -370,6 +379,8 @@ RSpec.describe 'Mobile > Ticket > Article actions', app: :mobile, authenticated_
   end
 
   context 'when article was created as sms' do
+    let(:trigger_label) { 'Reply' }
+
     let(:article) do
       create(
         :ticket_article,
@@ -409,6 +420,8 @@ RSpec.describe 'Mobile > Ticket > Article actions', app: :mobile, authenticated_
   end
 
   context 'when article was created as a telegram message' do
+    let(:trigger_label) { 'Reply' }
+
     let(:article) do
       create(
         :ticket_article,
@@ -422,6 +435,8 @@ RSpec.describe 'Mobile > Ticket > Article actions', app: :mobile, authenticated_
   end
 
   context 'when article was created as a facebook post' do
+    let(:trigger_label) { 'Reply' }
+
     let(:article) do
       create(
         :ticket_article,

@@ -1,0 +1,10 @@
+mutation knowledgeBaseCategoryAdd($input: KnowledgeBaseCategoryInput!, $locale: String!) {
+  knowledgeBaseCategoryAdd(input: $input, locale: $locale) {
+    category {
+      ...knowledgeBaseCategoryGridAttributes
+    }
+    errors {
+      ...errors
+    }
+  }
+}
