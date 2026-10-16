@@ -36,7 +36,7 @@ UUID, not a usable identity (see Penpot regression test `3a7adafc5`).
   an existing user's roles are never changed on login. `Agent` and `Admin`
   are granted out of band by the bundle's `provision-workspaces-admin.sh`.
   `DEFAULT_EMAIL_DOMAIN` is used only to complete bare usernames — it is
-  the platform's *synthetic* domain for users with no verified email, so
+  the platform's _synthetic_ domain for users with no verified email, so
   deriving privilege from it would elevate exactly the unverified
   population.
 - **Session mismatch**: if the session user differs from the header
@@ -53,7 +53,7 @@ boot:
 | `user_show_password_login` | `false` | Hides password form on login page, hides password change in profile |
 | `user_lost_password` | `false` | Disables "Forgot password?" link and backend reset endpoints |
 | `user_create_account` | `false` | Disables self-registration (not in the original plan, added defensively to prevent local signup bypassing SSO) |
-| `system_init_done` | `true` | Skips the guided-setup wizard. Its router guard redirects *every* route to `/guided-setup` while this is false, so an already SSO-authenticated user lands on the create-admin sign-up screen instead of the helpdesk |
+| `system_init_done` | `true` | Skips the guided-setup wizard. Its router guard redirects _every_ route to `/guided-setup` while this is false, so an already SSO-authenticated user lands on the create-admin sign-up screen instead of the helpdesk |
 
 Settings are only forced when their rows exist in the database (safe during
 `db:migrate` before seeds run), and a setting already holding the wanted
@@ -72,6 +72,7 @@ value is left untouched rather than rewritten on each boot.
 `auth_sso`.
 
 Additionally:
+
 - **Email is immutable** — a `validate` callback on User rejects email
   changes for all users except system (user_id=1). This surfaces as a
   proper validation error (422), not a 500. This prevents users from
