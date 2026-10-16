@@ -5413,6 +5413,10 @@ msgstr ""
 msgid "Defines if the i-doit (https://www.i-doit.org/) integration is enabled or not."
 msgstr ""
 
+#: lib/zammad/mpass_logout.rb:114
+msgid "Defines if the platform SSO integration (AUTH_TYPE=SSO) is active. Managed by the deployment environment, not by administrators."
+msgstr ""
+
 #: db/seeds/settings.rb:2443
 msgid "Defines if the ticket conditions editor supports complex logical expressions."
 msgstr ""
@@ -10681,6 +10685,10 @@ msgstr ""
 msgid "Logout"
 msgstr ""
 
+#: lib/zammad/mpass_logout.rb:126
+msgid "Logout Redirect URL"
+msgstr ""
+
 #: db/seeds/settings.rb:1120
 msgid "Lost Password"
 msgstr ""
@@ -13783,6 +13791,14 @@ msgstr ""
 
 #: db/seeds/settings.rb:5415
 msgid "Placetel integration"
+msgstr ""
+
+#: lib/zammad/mpass_logout.rb:111
+msgid "Platform SSO Active"
+msgstr ""
+
+#: lib/zammad/mpass_logout.rb:129
+msgid "Platform portal URL that the per-app sign out control navigates to. Managed by the deployment environment (LOGOUT_REDIRECT_URL), not by administrators."
 msgstr ""
 
 #: app/assets/javascripts/app/views/profile/notification.jst.eco:70
@@ -21393,6 +21409,10 @@ msgstr ""
 msgid "User Organization Selector - email"
 msgstr ""
 
+#: lib/zammad/mpass_proxy_auth.rb:34
+msgid "User account is not active"
+msgstr ""
+
 #: app/models/user/permissions.rb:53
 msgid "User authorization failed."
 msgstr ""
@@ -21406,6 +21426,10 @@ msgstr ""
 #: app/frontend/apps/desktop/entities/user/composables/useUserCreate.ts:73
 #: app/frontend/apps/mobile/entities/user/composables/useUserCreate.ts:48
 msgid "User could not be created."
+msgstr ""
+
+#: lib/zammad/mpass_proxy_auth.rb:33
+msgid "User could not be resolved"
 msgstr ""
 
 #: app/frontend/apps/desktop/entities/user/composables/useUserEdit.ts:89

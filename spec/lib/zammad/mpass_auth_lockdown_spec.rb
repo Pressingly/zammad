@@ -10,16 +10,16 @@ RSpec.describe Zammad::MpassAuthLockdown do
 
   describe Zammad::MpassAuthLockdown::UserEmailImmutable do
     before do
-      User.include(described_class) unless User.ancestors.include?(described_class)
+      User.include(described_class) if !(described_class >= User)
     end
 
     context 'when SSO is active' do
       let(:user) { create(:agent, email: 'original@example.com') }
 
-      it 'prevents email change by non-system users' do
+      it 'prevents email change by non-system users', :aggregate_failures do
         user.email = 'changed@example.com'
         expect(user.save).to be(false)
-        expect(user.errors[:email]).to include(match(/SSO/))
+        expect(user.errors[:email]).to include(include('SSO'))
       end
 
       it 'allows email change by system user (user_id=1)' do
@@ -47,7 +47,7 @@ RSpec.describe Zammad::MpassAuthLockdown do
 
   describe Zammad::MpassAuthLockdown::RejectPasswordChange do
     before do
-      Service::User::ChangePassword.prepend(described_class) unless Service::User::ChangePassword.ancestors.include?(described_class)
+      Service::User::ChangePassword.prepend(described_class) if !(described_class >= Service::User::ChangePassword)
     end
 
     context 'when SSO is active' do
@@ -59,7 +59,7 @@ RSpec.describe Zammad::MpassAuthLockdown do
             current_password: 'password',
             new_password:     'Test1234!new',
           )
-        end.to raise_error(Exceptions::Forbidden, /SSO/)
+        end.to raise_error(Exceptions::Forbidden, %r{SSO})
       end
     end
 

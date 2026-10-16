@@ -12,8 +12,8 @@ module Zammad
       private
 
       def prevent_email_change_under_sso
-        return unless ENV['AUTH_TYPE'] == 'SSO' # rubocop:disable Rails/EnvironmentVariableAccess
-        return unless email_changed?
+        return if ENV['AUTH_TYPE'] != 'SSO'
+        return if !email_changed?
         return if UserInfo.current_user_id == 1
 
         errors.add(:email, __('is managed by SSO and cannot be changed'))
@@ -22,7 +22,7 @@ module Zammad
 
     module RejectPasswordChange
       def execute
-        if ENV['AUTH_TYPE'] == 'SSO' # rubocop:disable Rails/EnvironmentVariableAccess
+        if ENV['AUTH_TYPE'] == 'SSO'
           raise Exceptions::Forbidden, __('Password management is disabled when SSO is active.')
         end
 

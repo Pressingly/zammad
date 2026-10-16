@@ -61,7 +61,7 @@ module Zammad
       def configured_url
         return '' if !sso?
 
-        raw = ENV[ENV_NAME].to_s.strip # rubocop:disable Rails/EnvironmentVariableAccess
+        raw = ENV[ENV_NAME].to_s.strip
 
         if raw.empty?
           Rails.logger.error("mpass_logout: #{ENV_NAME} is not set — the per-app sign out control will do nothing")
@@ -77,7 +77,7 @@ module Zammad
       private
 
       def sso?
-        ENV['AUTH_TYPE'] == 'SSO' # rubocop:disable Rails/EnvironmentVariableAccess
+        ENV['AUTH_TYPE'] == 'SSO'
       end
 
       def valid_url?(value)
@@ -108,10 +108,10 @@ module Zammad
         return if Setting.exists?(name: SSO_SETTING_NAME)
 
         Setting.create_if_not_exists(
-          title:       'Platform SSO Active',
+          title:       __('Platform SSO Active'),
           name:        SSO_SETTING_NAME,
           area:        'Core',
-          description: 'Defines if the platform SSO integration (AUTH_TYPE=SSO) is active. Managed by the deployment environment, not by administrators.',
+          description: __('Defines if the platform SSO integration (AUTH_TYPE=SSO) is active. Managed by the deployment environment, not by administrators.'),
           options:     {},
           state:       false,
           preferences: {},
@@ -123,10 +123,10 @@ module Zammad
         return if Setting.exists?(name: REDIRECT_SETTING_NAME)
 
         Setting.create_if_not_exists(
-          title:       'Logout Redirect URL',
+          title:       __('Logout Redirect URL'),
           name:        REDIRECT_SETTING_NAME,
           area:        'Core',
-          description: 'Platform portal URL that the per-app sign out control navigates to. Managed by the deployment environment (LOGOUT_REDIRECT_URL), not by administrators.',
+          description: __('Platform portal URL that the per-app sign out control navigates to. Managed by the deployment environment (LOGOUT_REDIRECT_URL), not by administrators.'),
           options:     {},
           state:       '',
           preferences: {},

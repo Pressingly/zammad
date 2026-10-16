@@ -8,7 +8,7 @@ Rails.application.config.after_initialize do
   Zammad::MpassLogout.sync_settings!
 end
 
-if ENV['AUTH_TYPE'] == 'SSO' # rubocop:disable Rails/EnvironmentVariableAccess
+if ENV['AUTH_TYPE'] == 'SSO'
   require 'zammad/mpass_proxy_auth'
   require 'zammad/mpass_auth_lockdown'
 
@@ -20,7 +20,7 @@ if ENV['AUTH_TYPE'] == 'SSO' # rubocop:disable Rails/EnvironmentVariableAccess
 
   Rails.application.config.after_initialize do
     begin
-      next unless ActiveRecord::Base.connection_pool.with_connection { ActiveRecord::Base.connection.table_exists?('settings') }
+      next if !ActiveRecord::Base.connection_pool.with_connection { ActiveRecord::Base.connection.table_exists?('settings') }
     rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::NoDatabaseError, ActiveRecord::StatementInvalid
       next
     end
@@ -38,7 +38,7 @@ if ENV['AUTH_TYPE'] == 'SSO' # rubocop:disable Rails/EnvironmentVariableAccess
       'user_create_account'      => false,
       'system_init_done'         => true,
     }.each do |name, value|
-      next unless Setting.exists?(name: name)
+      next if !Setting.exists?(name: name)
       next if Setting.get(name) == value
 
       Setting.set(name, value)
