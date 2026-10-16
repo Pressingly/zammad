@@ -13565,6 +13565,10 @@ msgstr ""
 msgid "Password for proxy connection."
 msgstr ""
 
+#: lib/zammad/mpass_auth_lockdown.rb:26
+msgid "Password management is disabled when SSO is active."
+msgstr ""
+
 #: db/seeds/settings.rb:2219
 msgid "Password needs to contain 2 lower case and 2 upper case characters."
 msgstr ""
@@ -23456,6 +23460,10 @@ msgstr ""
 
 #: lib/validations/object_manager/attribute_validator/max_length.rb:25
 msgid "is longer than the allowed length %{maxlength}"
+msgstr ""
+
+#: lib/zammad/mpass_auth_lockdown.rb:19
+msgid "is managed by SSO and cannot be changed"
 msgstr ""
 
 #: app/assets/javascripts/app/controllers/_ui_element/core_workflow_condition.coffee:103
