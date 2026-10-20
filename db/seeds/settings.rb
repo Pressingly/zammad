@@ -253,6 +253,35 @@ Setting.create_or_update(
   state:       'relative',
   frontend:    true
 )
+Setting.create_or_update(
+  title:       __('User Name Format'),
+  name:        'user_name_format',
+  area:        'System::Branding',
+  description: __('Defines how user names are displayed in dropdowns, overviews and selection fields.'),
+  options:     {
+    form: [
+      {
+        display:   '',
+        null:      false,
+        name:      'user_name_format',
+        tag:       'select',
+        options:   {
+          first_last:       __('Firstname Lastname'),
+          last_first:       __('Lastname Firstname'),
+          last_first_comma: __('Lastname, Firstname'),
+        },
+        translate: true,
+      },
+    ],
+  },
+  preferences: {
+    render:     true,
+    prio:       11,
+    permission: ['admin.branding'],
+  },
+  state:       'first_last',
+  frontend:    true
+)
 options = {}
 (10..99).each do |item|
   options[item] = item
@@ -305,6 +334,18 @@ Setting.create_if_not_exists(
     permission:             ['admin.system'],
   },
   frontend:    true
+)
+Setting.create_if_not_exists(
+  title:       __('Alternative fully qualified domain name'),
+  name:        'alternative_fqdn',
+  area:        'System::WebSocket',
+  description: __('Defines an additional fully qualified domain name of the system, which is accepted as an origin for WebSocket connections.'),
+  state:       '',
+  preferences: {
+    online_service_disable: true,
+    permission:             ['admin.system'],
+  },
+  frontend:    false
 )
 Setting.create_if_not_exists(
   title:       __('WebSocket backend'),
@@ -787,6 +828,7 @@ Setting.create_if_not_exists(
   },
   frontend:    true
 )
+# TODO: Deprecated in desktop view, drop later when we drop legacy stack.
 Setting.create_if_not_exists(
   title:       __('Sidebar Attachments'),
   name:        'ui_ticket_zoom_attachments_preview',
@@ -1788,7 +1830,7 @@ Setting.create_if_not_exists(
           false => 'no',
         },
         translate: true,
-        help:      __('Requires the "xms_edov" ID token claim (along with the "email" claim) to be present and true before trusting an incoming email address for account auto-linking. Both must first be configured as optional claims on the Azure app registration. Until that is done, enabling this blocks all Microsoft 365 account auto-linking by email.'),
+        help:      __('Requires the "xms_edov" ID token claim to be true, and the "email" claim to match the incoming email address, before trusting that address for account auto-linking. Both claims must first be configured as optional claims on the Azure app registration. Until that is done, enabling this blocks all Microsoft 365 account auto-linking by email.'),
       },
       {
         display:  __('Your callback URL'),
@@ -3175,6 +3217,54 @@ Setting.create_if_not_exists(
 )
 
 Setting.create_if_not_exists(
+  title:       __('Honeypot spam protection'),
+  name:        'form_ticket_create_honeypot',
+  area:        'Form::SpamProtection',
+  description: __('Adds an invisible field to the web form and rejects submissions that fill it in, which automated clients tend to do.'),
+  options:     {
+    form: [
+      {
+        display: '',
+        null:    true,
+        name:    'form_ticket_create_honeypot',
+        tag:     'boolean',
+        options: {
+          true  => 'yes',
+          false => 'no',
+        },
+      },
+    ],
+  },
+  state:       true,
+  preferences: {
+    permission: ['admin.channel_formular'],
+  },
+  frontend:    false,
+)
+Setting.create_if_not_exists(
+  title:       __('CAPTCHA provider'),
+  name:        'form_ticket_create_captcha_provider',
+  area:        'Form::SpamProtection',
+  description: __('Defines the CAPTCHA provider used to protect the web form. Leave empty to disable. The list of available providers is derived from the registered FormSpamProtection::Captcha backends.'),
+  state:       '',
+  preferences: {
+    permission: ['admin.channel_formular'],
+  },
+  frontend:    false,
+)
+Setting.create_if_not_exists(
+  title:       __('CAPTCHA provider options'),
+  name:        'form_ticket_create_captcha_options',
+  area:        'Form::SpamProtection',
+  description: __('Stores the credentials (e.g. site key and secret) of the selected CAPTCHA provider.'),
+  state:       {},
+  preferences: {
+    permission: ['admin.channel_formular'],
+  },
+  frontend:    false,
+)
+
+Setting.create_if_not_exists(
   title:       __('Form Allowed Parameters'),
   name:        'form_allowed_params',
   area:        'Form::API',
@@ -3485,7 +3575,7 @@ Setting.create_if_not_exists(
   title:       __('Block Notifications'),
   name:        'send_no_auto_response_reg_exp',
   area:        'Email::Base',
-  description: __('If this regex matches, no notification will be sent by the sender.'),
+  description: __('If this regex matches, no notification will be sent to the sender.'),
   options:     {
     form: [
       {
@@ -4348,6 +4438,15 @@ Setting.create_if_not_exists(
   description: __('Defines postmaster filter to handle secure mailing.'),
   options:     {},
   state:       'Channel::Filter::SecureMailing',
+  frontend:    false
+)
+Setting.create_if_not_exists(
+  title:       __('Defines postmaster filter.'),
+  name:        '0012_postmaster_filter_attachment_reference_remove',
+  area:        'Postmaster::PreFilter',
+  description: __('Defines postmaster filter to remove references to local attachments from incoming emails.'),
+  options:     {},
+  state:       'Channel::Filter::AttachmentReferenceRemove',
   frontend:    false
 )
 Setting.create_if_not_exists(
@@ -5749,6 +5848,34 @@ Setting.create_if_not_exists(
 )
 
 Setting.create_if_not_exists(
+  title:       __('S/MIME signing for system notifications'),
+  name:        'smime_sign_system_notifications',
+  area:        'Integration::SMIME',
+  description: __('Defines if system notification emails are S/MIME signed.'),
+  options:     {
+    form: [
+      {
+        display: '',
+        null:    true,
+        name:    'smime_sign_system_notifications',
+        tag:     'boolean',
+        options: {
+          true  => 'yes',
+          false => 'no',
+        },
+      },
+    ],
+  },
+  state:       false,
+  preferences: {
+    prio:       3,
+    permission: ['admin.integration'],
+  },
+  # No real-time WebSocket broadcast needed for this admin toggle.
+  frontend:    false,
+)
+
+Setting.create_if_not_exists(
   title:       __('PGP integration'),
   name:        'pgp_integration',
   area:        'Integration::Switch',
@@ -5788,6 +5915,34 @@ Setting.create_if_not_exists(
     permission: ['admin.integration'],
   },
   frontend:    true,
+)
+
+Setting.create_if_not_exists(
+  title:       __('PGP signing for system notifications'),
+  name:        'pgp_sign_system_notifications',
+  area:        'Integration::PGP',
+  description: __('Defines if system notification emails are PGP signed.'),
+  options:     {
+    form: [
+      {
+        display: '',
+        null:    true,
+        name:    'pgp_sign_system_notifications',
+        tag:     'boolean',
+        options: {
+          true  => 'yes',
+          false => 'no',
+        },
+      },
+    ],
+  },
+  state:       false,
+  preferences: {
+    prio:       3,
+    permission: ['admin.integration'],
+  },
+  # No real-time WebSocket broadcast needed for this admin toggle.
+  frontend:    false,
 )
 
 Setting.create_if_not_exists(
@@ -6110,22 +6265,6 @@ Setting.create_if_not_exists(
 )
 
 Setting.create_if_not_exists(
-  title:       __('AI Provider Config'),
-  name:        'ai_provider_config',
-  area:        'AI::Provider',
-  description: __('Stores the AI provider configuration.'),
-  options:     {},
-  state:       {},
-  preferences: {
-    permission:  ['admin.ai_provider'],
-    validations: [
-      'Setting::Validation::AIProviderConfig',
-    ],
-  },
-  frontend:    false,
-)
-
-Setting.create_if_not_exists(
   title:       __('Ticket Summary'),
   name:        'ai_assistance_ticket_summary',
   area:        'AI::Assistance',
@@ -6155,6 +6294,24 @@ Setting.create_if_not_exists(
     authentication: true,
     permission:     ['admin.ai_assistance_ticket_summary'],
   },
+  frontend:    true,
+)
+
+Setting.create_if_not_exists(
+  title:       __('Ticket Summary Selector'),
+  name:        'ai_assistance_ticket_summary_selector',
+  area:        'AI::Assistance',
+  description: __('Enable ticket summary for following matching tickets.'),
+  options:     {
+    form: [
+      {},
+    ],
+  },
+  preferences: {
+    authentication: true,
+    permission:     ['admin.ai_assistance_ticket_summary'],
+  },
+  state:       {},
   frontend:    true,
 )
 
@@ -6192,12 +6349,123 @@ Setting.create_if_not_exists(
   area:        'AI::Assistance',
   description: __('Enable or disable AI generation of knowledge base answers from ticket content.'),
   options:     {},
+  state:       true,
+  preferences: {
+    authentication: true,
+    permission:     ['admin.ai_knowledge_base'],
+  },
+  frontend:    true,
+)
+
+Setting.create_if_not_exists(
+  title:       __('AI Knowledge Base Answer Suggestions'),
+  name:        'ai_assistance_kb_answer_suggestions',
+  area:        'AI::Assistance',
+  description: __('Enable or disable the display of AI suggested knowledge base answers in the ticket sidebar.'),
+  options:     {},
+  state:       true,
+  preferences: {
+    authentication: true,
+    permission:     ['admin.ai_knowledge_base'],
+  },
+  frontend:    true,
+)
+
+Setting.create_if_not_exists(
+  title:       __('AI Knowledge Base Answer Suggestions Relevance Score'),
+  name:        'ai_assistance_kb_answer_suggestions_relevance_score',
+  area:        'AI::Assistance',
+  description: __('Defines the minimum relevance score (in percent) a knowledge base answer must reach to be suggested in the ticket sidebar.'),
+  options:     {
+    form: [
+      {
+        display: '',
+        null:    false,
+        name:    'ai_assistance_kb_answer_suggestions_relevance_score',
+        tag:     'integer',
+        min:     0,
+        max:     100,
+      },
+    ],
+  },
+  state:       86,
+  preferences: {
+    authentication: true,
+    permission:     ['admin.ai_knowledge_base'],
+    validations:    [
+      'Setting::Validation::AIRelevanceScore',
+    ],
+  },
+  frontend:    true,
+)
+
+Setting.create_if_not_exists(
+  title:       __('Knowledge base self-hosted video servers'),
+  name:        'kb_self_hosted_video_servers',
+  area:        'Kb::Core',
+  description: __('List of self-hosted video servers. This list is used for content security policy.'),
+  options:     {},
+  state:       [],
+  preferences: {
+    permission:  ['admin.knowledge_base'],
+    validations: ['Setting::Validation::KbSelfHostedVideoServers'],
+  },
+  frontend:    true,
+)
+
+Setting.create_if_not_exists(
+  title:       __('Vector DB'),
+  name:        'vectordb_enabled',
+  area:        'VectorDB',
+  description: __('Enable or disable the vector database, which is used for storing and retrieving vectorized data. Elasticsearch is used as the vector database backend.'),
+  options:     {},
   state:       false,
   preferences: {
     authentication: true,
-    permission:     ['admin.ai_assistance_kb_answer_from_ticket_generation'],
+    validations:    ['Setting::Validation::VectorDB'],
   },
   frontend:    true,
+)
+
+Setting.create_if_not_exists(
+  title:       __('Vector DB indexed embedding configuration'),
+  name:        'vectordb_indexed_embedding_configuration',
+  area:        'VectorDB',
+  description: __('Internal record of the embedding model and vector size the knowledge base index was last built with. Used to detect a stale index by comparison, without probing Elasticsearch.'),
+  state:       {},
+  frontend:    false,
+)
+
+Setting.create_if_not_exists(
+  title:       __('Vector DB knowledge base excluded categories'),
+  name:        'vectordb_knowledge_base_excluded_category_ids',
+  area:        'VectorDB::KnowledgeBase',
+  description: __('Defines which knowledge base categories are excluded from the vector database. Sub-categories of an excluded category are excluded as well. Note that the vector database has to be rebuilt after removing a category from this list, so that its answers get indexed.'),
+  state:       [],
+  frontend:    false,
+)
+
+Setting.create_if_not_exists(
+  title:       __('Vector DB knowledge base chunking strategy'),
+  name:        'vectordb_knowledge_base_chunking_strategy',
+  area:        'VectorDB::KnowledgeBase',
+  description: __('Defines the chunking strategy for the knowledge base vector database.'),
+  options:     {
+    form: [
+      {
+        display: '',
+        null:    true,
+        name:    'vectordb_knowledge_base_chunking_strategy',
+        tag:     'select',
+        options: {
+          'recursive' => __('Recursive hierarchical chunking'),
+          'sentence'  => __('Sentence-based chunking'),
+        },
+      },
+    ],
+  },
+  state:       'sentence',
+  frontend:    false,
 )
 
 # TODO: Unused in desktop view, drop later.
@@ -6226,4 +6494,15 @@ Setting.create_if_not_exists(
     permission: ['admin.ui'],
   },
   frontend:    true,
+)
+
+Setting.create_if_not_exists(
+  title:       __('Packages Token'),
+  name:        'packages_token',
+  area:        'Core',
+  description: __('This setting defines the token to access the support.zammad.com instance for package remote commands.'),
+  options:     {},
+  state:       '',
+  preferences: { online_service_disable: true, permission: ['admin.package'] },
+  frontend:    false,
 )

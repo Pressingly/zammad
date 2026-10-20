@@ -3,8 +3,8 @@
 require 'rails_helper'
 
 RSpec.describe 'Desktop > Ticket > Merge', app: :desktop_view, authenticated_as: :agent, type: :system do
-  let(:agent)   { create(:agent, groups: [group]) }
-  let(:group)   { create(:group) }
+  let(:agent) { create(:agent, groups: [group]) }
+  let(:group) { create(:group) }
 
   let!(:ticket) do
     create(:ticket, group:).tap do |ticket|
@@ -63,8 +63,12 @@ RSpec.describe 'Desktop > Ticket > Merge', app: :desktop_view, authenticated_as:
 
       expect(find('.inner-article-body')).to have_text('merged')
 
+      wait_for_form_to_settle("form-ticket-edit-#{duplicate_ticket.id}")
+
       click_on('Drafts & macros')
-      click_on(macro.name)
+      within '[role="menu"]' do
+        click_on(macro.name)
+      end
 
       within '#ticketSidebar' do
         expect(page).to have_text('duplicate')

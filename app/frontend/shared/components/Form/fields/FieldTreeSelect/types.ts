@@ -14,11 +14,8 @@ export type FlatSelectOption = SelectOption & {
   parents: (string | number | boolean)[]
 }
 
-export type MatchedFlatSelectOption = FlatSelectOption & {
-  matchedPath?: string
-}
-
 export interface TreeSelectProps {
+  autoOpenDropdown?: boolean
   clearable?: boolean
   historicalOptions?: Record<string, string>
   multiple?: boolean

@@ -56,15 +56,6 @@ class KnowledgeBase
       end
     end
 
-    def all_children
-      case @object
-      when KnowledgeBase::Category
-        @object.self_with_children - [@object]
-      when KnowledgeBase
-        @object.categories.root.map(&:self_with_children).flatten
-      end
-    end
-
     def update_single_child(child)
       inherited_permissions = (child.parent || child.knowledge_base).permissions_effective
 
@@ -76,7 +67,7 @@ class KnowledgeBase
     end
 
     def update_all_children
-      all_children.each do |child|
+      @object.all_children.each do |child|
         update_single_child(child)
       end
     end
@@ -85,7 +76,7 @@ class KnowledgeBase
       return if !@user
       return if KnowledgeBase::EffectivePermission.new(@user, @object).access_effective == 'editor'
 
-      raise Exceptions::UnprocessableContent, __('Invalid permissions, do not lock yourself out.')
+      raise Exceptions::UnprocessableContent, __('These permissions are invalid because they would lock you out.')
     end
 
     def mark_permission_for_cleanup_if_needed(permission, parents)

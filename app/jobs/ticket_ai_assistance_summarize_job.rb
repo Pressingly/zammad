@@ -3,12 +3,15 @@
 class TicketAIAssistanceSummarizeJob < AIJob
   include HasActiveJobLock
 
+  EXISTING_ACTIVE_JOB_LOCK_BEHAVIOUR = :dismiss_running
+
   def lock_key
     "#{self.class.name}/#{arguments[0].id}/#{arguments[0].articles.without_system_notifications.last&.created_at}/#{arguments[1]}"
   end
 
-  def perform(ticket, locale, regeneration_of: nil)
-    ai_result = Service::Ticket::AIAssistance::Summarize.execute(
+  def perform(ticket, locale, current_user: nil, regeneration_of: nil)
+    current_user ||= UserInfo.current_user || User.find_by(id: 1)
+    ai_result = Service::Ticket::AIAssistance::Summarize.with_current_user(current_user).execute(
       locale:,
       ticket:,
       regeneration_of:,

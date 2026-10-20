@@ -8,7 +8,6 @@ import { useActivityMessage } from '#shared/composables/activity-message/useActi
 import type { OnlineNotification } from '#shared/graphql/types.ts'
 
 import AiAgentAvatar from '#desktop/components/AiAgent/AiAgentAvatar.vue'
-import { initializeBetaUi } from '#desktop/components/BetaUi/composables/useBetaUi.ts'
 import CommonButton from '#desktop/components/CommonButton/CommonButton.vue'
 
 interface Props {
@@ -24,29 +23,15 @@ const emit = defineEmits<{
 }>()
 
 const { link, builder, highlightedMessage } = useActivityMessage(toRef(props, 'notification'))
-const { clearSwitchAndRedirect } = initializeBetaUi()
 
-const handleLinkClick = (event: Event, notification: OnlineNotification) => {
-  if (link && link.startsWith('#') && link.length > 1) {
-    event.preventDefault()
-    emit('visited', notification)
-    clearSwitchAndRedirect(`/${link}`)
-    return
-  }
-
-  if (link) {
-    emit('visited', notification)
-    return
-  }
-
-  if (notification.seen) return
-
-  emit('seen', notification)
+const handleLinkClick = (notification: OnlineNotification) => {
+  if (link) emit('visited', notification)
+  if (!notification.seen) emit('seen', notification)
 }
 </script>
 
 <template>
-  <li>
+  <li class="py-2 first:pt-0 last:pb-0">
     <div class="group isolate flex items-center justify-between gap-3">
       <component
         :is="link ? 'CommonLink' : 'div'"
@@ -59,7 +44,7 @@ const handleLinkClick = (event: Event, notification: OnlineNotification) => {
           'cursor-pointer': !notification.seen,
         }"
         :link="link ? `/${link}` : undefined"
-        @click="handleLinkClick($event, notification)"
+        @click="handleLinkClick(notification)"
       >
         <AiAgentAvatar v-if="notification?.meta?.createdByAi" class="col-start-1 row-span-2" />
         <CommonUserAvatar
@@ -82,7 +67,7 @@ const handleLinkClick = (event: Event, notification: OnlineNotification) => {
         <CommonLabel
           :id="`notification-${notification.id}`"
           tag="p"
-          class="inline! text-lg leading-5 text-black dark:text-white"
+          class="inline! text-lg leading-5 wrap-anywhere text-black dark:text-white"
           :class="{ 'group-hover/link:underline': notification.createdBy }"
           v-html="highlightedMessage"
         />

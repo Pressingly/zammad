@@ -10,15 +10,16 @@ module Service::AI::VectorDB
     private
 
     def embedding_size
-      provider = AI::Provider.current
+      provider = AI::ProviderConnection.for_embeddings&.provider_instance
+      raise(AI::VectorDB::MigrationError, __('The system currently has no selected AI provider for embeddings.')) if provider.nil?
 
-      embedding_sizes = provider.const_get(:EMBEDDING_SIZES)
+      # The model the admin picked, or the fixed one of a provider that has no configurable model
+      # (Zammad AI) - but never one resolved from the adapter's request time defaults.
+      embedding_model = provider.embedding_model
+      raise(AI::VectorDB::MigrationError, __('Missing embedding model in the provider configuration')) if embedding_model.blank?
 
-      if embedding_sizes.blank?
-        raise AI::VectorDB::MigrationError, __('The currently selected AI provider does not support embeddings.')
-      end
-
-      embedding_sizes.fetch(provider.const_get(:DEFAULT_OPTIONS)[:embedding_model])
+      provider.embedding_size ||
+        raise(AI::VectorDB::MigrationError, __('The currently selected AI provider does not support embeddings.'))
     end
   end
 end

@@ -1,0 +1,9 @@
+query autocompleteSearchKnowledgeBaseAnswer($input: AutocompleteSearchKnowledgeBaseAnswerInput!) {
+  autocompleteSearchKnowledgeBaseAnswer(input: $input) {
+    value
+    label
+    heading
+    visibility
+    url
+  }
+}

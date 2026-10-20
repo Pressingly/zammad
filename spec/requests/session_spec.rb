@@ -4,6 +4,89 @@ require 'rails_helper'
 
 RSpec.describe 'Sessions endpoints', type: :request do
 
+  describe 'GET /api/v1/sessions/switch/:id' do
+    let(:admin) { create(:admin) }
+    let(:agent) { create(:agent) }
+
+    before do
+      authenticated_as(admin)
+      get "/api/v1/sessions/switch/#{agent.id}", as: :json
+    end
+
+    it 'creates an audit log entry with both user names' do
+      audit_log = AuditLog.find_by(auditable_type: 'User', auditable_id: agent.id, action_type: 'switch_to')
+      expect(audit_log).to have_attributes(
+        user_id:        admin.id,
+        auditable_name: "#{admin.fullname} → #{agent.fullname}",
+        source_ip:      '127.0.0.1'
+      )
+    end
+  end
+
+  describe 'GET /api/v1/sessions/switch_back' do
+    let(:admin) { create(:admin) }
+    let(:agent) { create(:agent) }
+
+    before do
+      authenticated_as(admin, via: :browser)
+      get "/api/v1/sessions/switch/#{agent.id}", as: :json
+      get '/api/v1/sessions/switch_back', as: :json
+    end
+
+    it 'creates an audit log entry with both user names' do
+      audit_log = AuditLog.find_by(auditable_type: 'User', auditable_id: agent.id, action_type: 'switch_back_to')
+      expect(audit_log).to have_attributes(
+        user_id:        admin.id,
+        auditable_name: "#{agent.fullname} → #{admin.fullname}",
+        source_ip:      '127.0.0.1'
+      )
+    end
+  end
+
+  describe 'multiple consecutive switches' do
+    let(:admin)       { create(:admin) }
+    let(:other_admin) { create(:admin) }
+    let(:third_admin) { create(:admin) }
+    let(:agent)       { create(:agent) }
+
+    before do
+      authenticated_as(admin, via: :browser)
+      get "/api/v1/sessions/switch/#{other_admin.id}", as: :json
+      get "/api/v1/sessions/switch/#{third_admin.id}", as: :json
+      put "/api/v1/users/#{agent.id}", params: { active: false }, as: :json
+    end
+
+    it 'keeps the original user in the audit log entry' do
+      audit_log = AuditLog.find_by(auditable_type: 'User', auditable_id: agent.id, action_type: 'update')
+      expect(audit_log).to have_attributes(
+        user_id:       third_admin.id,
+        user_fullname: "#{admin.fullname} → #{third_admin.fullname}",
+        preferences:   include('switched_from_user_id' => admin.id, 'switched_from_user_fullname' => admin.fullname)
+      )
+    end
+  end
+
+  describe 'audit logging of actions performed while switched' do
+    let(:admin)       { create(:admin) }
+    let(:other_admin) { create(:admin) }
+    let(:agent)       { create(:agent) }
+
+    before do
+      authenticated_as(admin, via: :browser)
+      get "/api/v1/sessions/switch/#{other_admin.id}", as: :json
+      put "/api/v1/users/#{agent.id}", params: { active: false }, as: :json
+    end
+
+    it 'includes the original user in the audit log entry' do
+      audit_log = AuditLog.find_by(auditable_type: 'User', auditable_id: agent.id, action_type: 'update')
+      expect(audit_log).to have_attributes(
+        user_id:       other_admin.id,
+        user_fullname: "#{admin.fullname} → #{other_admin.fullname}",
+        preferences:   include('switched_from_user_id' => admin.id, 'switched_from_user_fullname' => admin.fullname)
+      )
+    end
+  end
+
   describe 'GET /' do
 
     let(:headers)     { {} }
@@ -35,6 +118,50 @@ RSpec.describe 'Sessions endpoints', type: :request do
         end
 
         it "sets Cookie with 'secure' flag" do
+          expect(response.header['Set-Cookie']).to include(session_key).and include('; secure;')
+        end
+      end
+
+      # Rack decides which forwarded header wins; these examples pin that order down, because
+      #   our proxy configuration relies on it (see https://github.com/zammad/zammad/issues/6305).
+      context "when a proxy sends contradicting 'X-Forwarded-Proto' and 'X-Forwarded-Scheme' headers" do
+
+        let(:headers) do
+          {
+            'X-Forwarded-Proto'  => 'http',
+            'X-Forwarded-Scheme' => 'https'
+          }
+        end
+
+        it "sets no Cookie, because 'X-Forwarded-Proto' takes precedence" do
+          expect(response.header['Set-Cookie']).to be_nil
+        end
+      end
+
+      context "when a proxy sends an 'X-Forwarded-Ssl' header" do
+
+        let(:headers) do
+          {
+            'X-Forwarded-Proto' => 'http',
+            'X-Forwarded-Ssl'   => 'on'
+          }
+        end
+
+        it "sets Cookie with 'secure' flag, because 'X-Forwarded-Ssl' takes precedence" do
+          expect(response.header['Set-Cookie']).to include(session_key).and include('; secure;')
+        end
+      end
+
+      context "when a proxy sends a 'Forwarded' header" do
+
+        let(:headers) do
+          {
+            'X-Forwarded-Proto' => 'http',
+            'Forwarded'         => 'proto=https'
+          }
+        end
+
+        it "sets Cookie with 'secure' flag, because 'Forwarded' takes precedence" do
           expect(response.header['Set-Cookie']).to include(session_key).and include('; secure;')
         end
       end
@@ -91,6 +218,12 @@ RSpec.describe 'Sessions endpoints', type: :request do
         get '/api/v1/signshow', params: params, as: :json
 
         expect(json_response['session']).not_to include('password')
+      end
+
+      it 'does not expose the session id' do
+        get '/api/v1/signshow', params: { fingerprint: fingerprint }, as: :json
+
+        expect(json_response['config']).not_to include('session_id')
       end
 
       context 'when after auth modules are triggered' do
@@ -399,6 +532,69 @@ RSpec.describe 'Sessions endpoints', type: :request do
       it 'redirects to the default app route' do
         get '/auth/sso', as: :json, env: env
         expect(response).to redirect_to('/#')
+      end
+    end
+  end
+
+  describe 'GET /auth/:provider/callback (omniauth)' do
+    let(:user)           { create(:agent) }
+    let!(:authorization) { create(:authorization, user: user, provider: 'github', uid: '123456') }
+
+    # The provider name is arbitrary here: OmniAuth test mode injects the mock
+    # for the requested path and bypasses the registered strategy entirely, so
+    # this exercises the controller's session handling regardless of provider.
+    around do |example|
+      OmniAuth.config.test_mode = true
+      OmniAuth.config.mock_auth[:github] = OmniAuth::AuthHash.new(
+        provider:    authorization.provider,
+        uid:         authorization.uid,
+        info:        {},
+        credentials: {},
+      )
+
+      example.run
+    ensure
+      OmniAuth.config.mock_auth.delete(:github)
+      OmniAuth.config.test_mode = false
+    end
+
+    it 'redirects to the app' do
+      get '/auth/github/callback'
+
+      expect(response).to redirect_to('/#')
+    end
+
+    it 'sets the :user_id session parameter' do
+      expect { get '/auth/github/callback' }
+        .to change { request&.session&.fetch(:user_id) }.to(user.id)
+    end
+
+    # Ensures the session survives SessionHelper.cleanup_expired (2h temp-session purge)
+    # and is instead governed by the configured Session Timeout, like password/SSO logins.
+    # See https://github.com/zammad/zammad/issues/6244
+    it 'marks the session as persistent' do
+      expect { get '/auth/github/callback' }
+        .to change { request&.session&.fetch(:persistent) }.to(true)
+    end
+
+    # Without this the browser cookie is session-only, so the persistent server-side session
+    # becomes unreachable on browser restart. The cookie lifetime tracks the configured Session
+    # Timeout. See https://github.com/zammad/zammad/issues/6260
+    context 'with a configured session timeout' do
+      before { Setting.set('session_timeout', { 'default' => '0', 'ticket.agent' => 1.week.seconds.to_s }) }
+
+      it 'gives the browser cookie a lifetime matching the session timeout' do
+        expect { get '/auth/github/callback' }
+          .to change { request && request.env['rack.session.options'][:expire_after] }.to(1.week)
+      end
+    end
+
+    context 'when the session timeout is disabled' do
+      before { Setting.set('session_timeout', { 'default' => '0' }) }
+
+      it 'falls back to the SessionHelper.cleanup_expired cap' do
+        expect { get '/auth/github/callback' }
+          .to change { request && request.env['rack.session.options'][:expire_after] }.to(SessionHelper::MAX_SESSION_LIFETIME)
       end
     end
   end

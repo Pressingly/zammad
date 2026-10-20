@@ -213,9 +213,11 @@ class App.Utils
       html = html
         .replace(/([A-z])\n([A-z])/gm, '$1 $2')
         .replace(/\n|\r/g, '')
+      html = @emptyBlock2empty(html)
         .replace(/<(br|hr)>/g, "\n")
         .replace(/<(br|hr)\/>/g, "\n")
         .replace(/<\/(div|p|blockquote|form|textarea|address|tr)>/g, "\n")
+      html = @blockStart2newline(html, 'div|p|blockquote|form|textarea|address|tr')
       return $('<div>' + html + '</div>').text()
 
     # remove not needed new lines
@@ -224,14 +226,30 @@ class App.Utils
       .replace(/\n|\r/g, '')
 
     # trim and cleanup
-    html = html
+    html = @emptyBlock2empty(html)
       .replace(/<(br|hr)>/g, "\n")
       .replace(/<(br|hr)\/>/g, "\n")
-      .replace(/<(div)(|.+?)>/g, "")
       .replace(/<(p|blockquote|form|textarea|address|tr)(|.+?)>/g, "\n")
       .replace(/<\/(div|p|blockquote|form|textarea|address|tr)>/g, "\n")
+    html = @blockStart2newline(html, 'div')
     $('<div>' + html + '</div>').text().trim()
       .replace(/\n{3,20}/g, "\n\n")   # remove multiple empty lines
+
+  # Attributes of an opening tag, a quoted value may contain a literal >.
+  @tagAttributes: /(\s(?:[^>"']|"[^"]*"|'[^']*')*)?/.source
+
+  # Browsers render a <br> that is the only content of a block as one empty line, not two.
+  @emptyBlock2empty: (html) ->
+    html.replace(new RegExp("<(div|p)#{@tagAttributes}>\\s*<br\\s*\\/?>\\s*<\\/\\1>", 'g'), '<$1$2></$1>')
+
+  # An opening block tag only starts a new line when inline content precedes it, so the
+  #   unwrapped first line Chromium and Safari produce (Hello<div>1</div>) keeps its break.
+  @blockStart2newline: (html, tags) ->
+    marker = "\u0000"
+    html
+      .replace(new RegExp("<(#{tags})#{@tagAttributes}>", 'g'), marker)
+      .replace(new RegExp("(^|\\n)[^\\S\\n]*#{marker}+", 'g'), '$1')
+      .replace(new RegExp("#{marker}+", 'g'), "\n")
 
   # htmlEscapedAndLinkified = App.Utils.linkify(rawText)
   @linkify: (string) ->
@@ -316,6 +334,25 @@ class App.Utils
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;')
+
+  # safe = App.Utils.safeUrl(url)
+  # Returns the url only if it uses a scheme safe to put in an href, otherwise ''.
+  #   Relative/scheme-less urls are kept; javascript:, data: etc. are dropped.
+  # Intentionally stricter than the shared `safeUrl` of the Vue apps: its only caller
+  #   renders article preference links, which are only ever web links, so an allowlist
+  #   is used here instead of just rejecting the script-executing schemes.
+  @safeUrl: (url) ->
+    return '' if !url
+    return '' if !url.replace
+
+    # Strip control characters (incl. tab/newline) that browsers ignore when
+    #   parsing a scheme, e.g. `java<TAB>script:` would otherwise slip through.
+    stripped = url.replace(/[\x00-\x1F\x7F]/g, '')
+
+    scheme = stripped.match(/^\s*([a-z][a-z0-9+.\-]*):/i)
+    return stripped if !scheme
+    return stripped if _.contains(['http', 'https', 'mailto', 'tel'], scheme[1].toLowerCase())
+    ''
 
   # App.Utils.htmlStrip(element)
   @htmlStrip: (element) ->
@@ -1435,6 +1472,8 @@ class App.Utils
                 additional_class = 'is-inactive'
               return $('<li>').addClass(additional_class).append(option_html).appendTo(ul)
         },
+      # Note the handler is bound after tokenfield() initialised, so tokens it
+      #   creates from content already in the field skip this check.
       ).on('tokenfield:createtoken', (e) ->
         if type is 'email' && !e.attrs.value.match(/@/) || e.attrs.value.match(/\s/)
           e.preventDefault()

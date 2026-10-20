@@ -283,13 +283,7 @@ Lint/InterpolationCheck:
   Description: "Raise warning for interpolation in single q strs"
   Enabled: true
   Exclude:
-    - "test/unit/email_process_auto_response_test.rb"
-    - "test/unit/email_process_bounce_delivery_permanent_failed_test.rb"
-    - "test/unit/email_process_bounce_follow_test.rb"
-    - "test/unit/notification_factory_renderer_test.rb"
-    - "test/unit/notification_factory_template_test.rb"
-    - "test/unit/ticket_trigger_test.rb"
-    - "test/unit/ticket_trigger_recursive_disabled_test.rb"
+    - "spec/models/trigger/base_spec.rb"
 
 Lint/UselessConstantScoping:
   Description: Checks for useless constant scoping.
@@ -343,6 +337,7 @@ GraphQL/ObjectDescription:
   Exclude:
     - "app/graphql/gql/fields/**/*" # false positive?
     - "app/graphql/gql/types/**/base_*"
+    - "app/graphql/gql/types/**/extensions/**/*" # union extension classes are no GraphQL objects
 
 # RSpec tests
 Style/NumericPredicate:
@@ -431,9 +426,6 @@ Capybara/SpecificActions:
 Capybara/RSpec/NegationMatcher:
   Description: Enforces use of have_no_* or not_to for negated expectations.
   EnforcedStyle: have_no
-
-Capybara/ClickLinkOrButtonStyle:
-  EnforcedStyle: link_or_button
 
 RSpec/ExampleLength:
   inherit_mode:
@@ -531,6 +523,16 @@ Zammad/GraphqlCsrfSkipVerification:
   Include:
     - "app/graphql/gql/**/*.rb"
 
+Zammad/GraphqlForbidSensitiveFields:
+  Enabled: true
+  Include:
+    - "app/graphql/gql/types/**/*.rb"
+    - "app/graphql/gql/mutations/**/*.rb"
+    - "app/graphql/gql/queries/**/*.rb"
+    - "app/graphql/gql/subscriptions/**/*.rb"
+  Exclude:
+    - "app/graphql/gql/types/input/**/*.rb"
+
 Zammad/MigrationEnsureIntegerPrimaryKey:
   Enabled: true
   Include:
@@ -585,3 +587,6 @@ Lint/MissingSuper:
   Description: "Checks for missing super calls in overridden methods. Skips Service classes."
   Exclude:
     - "app/services/**/*"
+
+Rails/StrongParametersExpect:
+  Enabled: false

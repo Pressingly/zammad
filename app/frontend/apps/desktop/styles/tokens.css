@@ -2,10 +2,13 @@
 
 /* stylelint-disable custom-property-empty-line-before */
 @theme {
+  --color-alpha-100: #ffffff1a;
+  --color-alpha-800: #0000001a;
   --color-alpha-900: #000a;
   --color-black: #000;
   --color-white: #fff;
   --color-neutral-50: #fafafa;
+  --color-neutral-75: #f5f5f5;
   --color-neutral-100: #e5e5e5;
   --color-neutral-200: #e3e3e3;
   --color-neutral-300: #dcdcdc;
@@ -31,6 +34,7 @@
   --color-stone-700: #383b41;
 
   --color-blue-50: #f9fafb;
+  --color-blue-75: #f2f6f7;
   --color-blue-100: #e5f0f5;
   --color-blue-200: #edf1f2;
   --color-blue-300: #d4e2e9;
@@ -98,7 +102,8 @@
 
   --z-index-60: 60;
 
-  --top-header-height: 0;
-
   --blur-2xs: 2px;
+
+  /* Not a design token, used for calculating sticky top for the FieldEditorActionBar */
+  --top-header-height: 0;
 }

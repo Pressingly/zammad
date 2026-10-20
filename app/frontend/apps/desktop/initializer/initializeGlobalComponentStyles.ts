@@ -8,7 +8,6 @@ import { initializeEditorLinkFormClasses } from '#shared/components/Form/fields/
 import { initializeAlertClasses } from '#shared/initializer/initializeAlertClasses.ts'
 import { initializeAvatarClasses } from '#shared/initializer/initializeAvatarClasses.ts'
 import { initializeBadgeClasses } from '#shared/initializer/initializeBadgeClasses.ts'
-import { initializeFilePreviewClasses } from '#shared/initializer/initializeFilePreviewClasses.ts'
 import { initializeLinkClasses } from '#shared/initializer/initializeLinkClasses.ts'
 import { initializeNotificationClasses } from '#shared/initializer/initializeNotificationClasses.ts'
 import { initializeOrganizationAvatarClasses } from '#shared/initializer/initializeOrganizationAvatarClasses.ts'
@@ -36,10 +35,16 @@ export const initializeGlobalComponentStyles = () => {
     danger: 'bg-pink-100 dark:bg-red-900 text-red-500',
     dismissButton:
       'outline-transparent focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-blue-800 rounded-sm',
+    translucent: {
+      success: 'bg-green-300/80 dark:bg-green-900/80 text-green-500',
+      info: 'bg-blue-500/80 dark:bg-blue-950/80 text-blue-800',
+      warning: 'bg-yellow-50/80 dark:bg-yellow-900/80 text-yellow-600',
+      danger: 'bg-pink-100/80 dark:bg-red-900/80 text-red-500',
+    },
   })
 
   initializeAvatarClasses({
-    base: 'border border-neutral-100 dark:border-gray-900 text-black',
+    base: 'border border-neutral-100 dark:border-gray-900 print:border-black text-black',
     vipOrganization: 'text-neutral-400',
     vipUser: 'text-yellow-300',
   })
@@ -111,16 +116,6 @@ export const initializeGlobalComponentStyles = () => {
       button:
         'text-sm outline-none p-3 text-left active:text-white active:bg-blue-800 dark:active:bg-blue-800 dark:hover:text-white hover:text-black inline-block w-full dark:text-neutral-400 focus-visible:bg-blue-800 focus-visible:text-white hover:bg-blue-600 dark:hover:bg-blue-900 text-gray-100',
     },
-  })
-
-  initializeFilePreviewClasses({
-    base: 'dark:text-white text-black text-sm leading-snug',
-    wrapper: 'p-2.5',
-    preview:
-      'hover:outline hover:outline-1 hover:outline-offset-1 hover:outline-blue-600 focus:outline-hidden focus:outline-0 focus:outline-offset-0 focus:hover:outline-1 focus:hover:outline-offset-1 focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-blue-800 dark:hover:outline-blue-900',
-    link: 'hover:rounded-xs hover:no-underline! hover:outline-1 hover:outline-offset-1 hover:outline-blue-600 dark:hover:outline-blue-900',
-    size: 'dark:text-neutral-500 text-stone-400 text-xs leading-snug',
-    icon: 'dark:text-neutral-500 text-stone-400',
   })
 
   initializeAiAssistantTextToolsLoadingBannerClasses({

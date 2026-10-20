@@ -49,4 +49,46 @@ RSpec.describe KnowledgeBase::Answer::Translation, '.search', current_user_id: -
     end
 
   end
+
+  describe '.search_preferences' do
+    let(:user) { create(:user, roles: [create(:role, permission_names: ['knowledge_base.editor'])]) }
+
+    before { knowledge_base }
+
+    context 'with an active knowledge base' do
+      let(:knowledge_base) { create(:knowledge_base) }
+
+      it 'offers the answers to the global search' do
+        expect(described_class.search_preferences(user)).to include(prio: 1209)
+      end
+    end
+
+    # A deactivated knowledge base contributes no searchable content, so with only that one around
+    #   the global search does not ask for its answers at all.
+    #   https://github.com/zammad/zammad/issues/6338
+    context 'with an inactive knowledge base' do
+      let(:knowledge_base) { create(:knowledge_base, active: false) }
+
+      it 'is not searched' do
+        expect(described_class.search_preferences(user)).to be(false)
+      end
+    end
+
+    # An agent has 'knowledge_base.reader' through the default role, so this takes a user who has no
+    #   knowledge base permission at all.
+    #
+    # Deliberately still false, and not to be "fixed": this gate is what keeps the knowledge base out
+    #   of the legacy interface's generic search, and it is meant to stay there
+    #   (zammad/coordination-desktop-view#873). The desktop search reaches these answers through
+    #   Gql::Concerns::SearchesKnowledgeBaseAnswers instead, precisely so that widening this - a
+    #   breaking change for the legacy search - is not needed.
+    context 'without any knowledge base permission' do
+      let(:knowledge_base) { create(:knowledge_base) }
+      let(:user)           { create(:customer) }
+
+      it 'is not searched' do
+        expect(described_class.search_preferences(user)).to be(false)
+      end
+    end
+  end
 end

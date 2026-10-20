@@ -3,6 +3,7 @@
 import { nextTick } from 'vue'
 
 import type { ViewerOptions } from '#shared/composables/useImageViewer.ts'
+import type { DeepPartial } from '#shared/types/utils.ts'
 
 import type { MockGraphQLInstance } from './mock-graphql-api'
 import type { Mock } from 'vitest'
@@ -45,7 +46,9 @@ export const waitForNextTick = async (withTimeout = false) => {
 
 export const waitUntil = async (
   condition: () => unknown,
-  msThreshold = process.env.CI ? 30_000 : 1_000,
+  // Must stay below the outer `testTimeout` (vite.config.mjs) with real margin — see
+  // tests/support/vitest-wrapper.ts for why equal values cause misleading failures.
+  msThreshold = process.env.CI ? 20_000 : 1_000,
 ) => {
   // point stack trace to the place where "waitUntil" was called
   const err = new Error('Timeout')
@@ -77,10 +80,10 @@ export const waitUntilSpyCalled = (spy: Mock) => {
 // The apollo cache always asks for a field, even if it's marked as optional
 // this function returns a proxy that will return "null" on properties not defined
 // in the initial object.
-export const nullableMock = <T extends object>(obj: T): T => {
+export const nullableMock = <T extends object>(obj: DeepPartial<T>): T => {
   const skipProperties = new Set(['_id', 'id', Symbol.toStringTag])
 
-  return new Proxy(obj, {
+  return new Proxy(obj as T, {
     get(target, prop, receiver) {
       if (!Reflect.has(target, prop) && !skipProperties.has(prop)) {
         return null

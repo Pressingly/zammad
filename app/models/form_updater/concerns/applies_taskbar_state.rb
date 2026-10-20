@@ -58,16 +58,24 @@ module FormUpdater::Concerns::AppliesTaskbarState
 
       next if apply_state_group_keys.present? && apply_state_group_keys.any? { |group_key| current_taskbar.state[group_key]&.key?(field) }
 
-      next if !object.respond_to?(field)
-      next if object[field] == data[field]
+      next if !object_field?(field)
 
-      apply_value.perform(field: field, config: { 'value' => object[field] }, include_blank: true)
+      # Through the same comparison the store path uses, so that the two cannot answer differently
+      #   for a value whose submitted form is not the record's own (see #object_field_changed?).
+      next if !object_field_changed?(field, data[field])
+
+      apply_value.perform(field: field, config: { 'value' => object_field_value(field) }, include_blank: true)
     end
   end
 
+  # Memoized including nil: one round trip resolves one taskbar, and the apply/store paths read
+  #   it repeatedly - each call is another GlobalID lookup with authorization.
   def current_taskbar
+    return @current_taskbar if defined?(@current_taskbar)
+
     id = meta.dig(:additional_data, 'taskbarId')
-    Gql::ZammadSchema.authorized_object_from_id(id, type: Taskbar, user: context[:current_user]) if id.present?
+
+    @current_taskbar = id.present? ? Gql::ZammadSchema.authorized_object_from_id(id, type: Taskbar, user: context[:current_user]) : nil
   end
 
   def should_apply?

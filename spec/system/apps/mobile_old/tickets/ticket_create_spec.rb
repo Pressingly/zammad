@@ -27,7 +27,7 @@ RSpec.describe 'Mobile > Ticket > Create', app: :mobile, authenticated_as: :user
 
   def check_is_focused(element)
     wait.until do
-      page.driver.browser.switch_to.active_element == element.native
+      element.evaluate_script('this === document.activeElement')
     end
   end
 
@@ -265,9 +265,7 @@ RSpec.describe 'Mobile > Ticket > Create', app: :mobile, authenticated_as: :user
 
       find_button('Go home').click
 
-      within '[role=alert]' do
-        expect(page).to have_text('Are you sure? You have unsaved changes that will get lost.')
-      end
+      expect(page).to have_text('Are you sure? You have unsaved changes that will get lost.')
     end
 
     it 'fills out new customer when it\'s created in place' do
@@ -285,6 +283,7 @@ RSpec.describe 'Mobile > Ticket > Create', app: :mobile, authenticated_as: :user
         find_input('Last name').type('Doe')
 
         click_on('Save')
+        wait_for_mutation('userAdd')
 
         expect(find_autocomplete('Customer')).to have_selected_option('John Doe')
       end

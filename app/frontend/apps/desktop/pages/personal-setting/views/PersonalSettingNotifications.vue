@@ -30,7 +30,9 @@ import { useUserCurrentNotificationPreferencesResetMutation } from '#desktop/pag
 import { useUserCurrentNotificationPreferencesUpdateMutation } from '#desktop/pages/personal-setting/graphql/mutations/userCurrentNotificationPreferencesUpdate.api.ts'
 import type { NotificationFormData } from '#desktop/pages/personal-setting/types/notifications.ts'
 
-const { breadcrumbItems } = useBreadcrumb(__('Notifications'))
+import { usePersonalSettingTabs } from '../composables/usePersonalSettingTabs.ts'
+
+const { breadcrumbItems } = useBreadcrumb()
 
 const user = toRef(useSessionStore(), 'user')
 
@@ -83,17 +85,19 @@ const schema = defineFormSchema([
   },
 ])
 
+const notificationFormValues = (
+  personalSettings: UserData['personalSettings'],
+): NotificationFormData => ({
+  group_ids: personalSettings?.notificationConfig?.groupIds ?? [],
+  matrix: personalSettings?.notificationConfig?.matrix || {},
+
+  // Default notification sound settings are not present on the user preferences.
+  file: personalSettings?.notificationSound?.file ?? EnumNotificationSoundFile.Xylo,
+  enabled: personalSettings?.notificationSound?.enabled ?? true,
+})
+
 const initialFormValues = computed<NotificationFormData>((oldValues) => {
-  const { notificationConfig = {}, notificationSound = {} } = user.value?.personalSettings || {}
-
-  const values: NotificationFormData = {
-    group_ids: notificationConfig?.groupIds ?? [],
-    matrix: notificationConfig?.matrix || {},
-
-    // Default notification sound settings are not present on the user preferences.
-    file: notificationSound?.file ?? EnumNotificationSoundFile.Xylo,
-    enabled: notificationSound?.enabled ?? true,
-  }
+  const values = notificationFormValues(user.value?.personalSettings)
 
   if (oldValues && isEqual(values, oldValues)) return oldValues
 
@@ -144,14 +148,6 @@ const onSubmit = async (form: FormSubmitData<NotificationFormData>) => {
     })
 }
 
-const resetFormToDefaults = (personalSettings: UserData['personalSettings']) => {
-  form.value?.resetForm({
-    values: {
-      matrix: personalSettings?.notificationConfig?.matrix || {},
-    },
-  })
-}
-
 const onResetToDefaultSettings = async () => {
   const confirmed = await waitForConfirmation(
     __('Are you sure? Your notifications settings will be reset to default.'),
@@ -176,7 +172,7 @@ const onResetToDefaultSettings = async () => {
 
       if (!personalSettings) return
 
-      resetFormToDefaults(personalSettings)
+      formReset({ values: notificationFormValues(personalSettings) })
 
       notify({
         id: 'notification-reset-success',
@@ -188,10 +184,17 @@ const onResetToDefaultSettings = async () => {
       loading.value = false
     })
 }
+
+const { tabs, activeTab } = usePersonalSettingTabs()
 </script>
 
 <template>
-  <LayoutContent :breadcrumb-items="breadcrumbItems" width="narrow">
+  <LayoutContent
+    :active-tab="activeTab"
+    :tabs="tabs"
+    :breadcrumb-items="breadcrumbItems"
+    width="narrow"
+  >
     <div class="mb-4">
       <Form
         id="notifications-form"
@@ -213,7 +216,7 @@ const onResetToDefaultSettings = async () => {
               {{ $t('Reset to default settings') }}
             </CommonButton>
             <CommonButton size="medium" type="submit" variant="submit" :disabled="loading">
-              {{ $t('Save notifications') }}
+              {{ $t('Save notification settings') }}
             </CommonButton>
           </div>
         </template>

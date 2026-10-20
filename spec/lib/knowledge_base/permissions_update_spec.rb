@@ -14,6 +14,7 @@ RSpec.describe KnowledgeBase::PermissionsUpdate do
     describe 'updating itself' do
       shared_examples 'updating itself' do |object_name:|
         let(:object) { send(object_name) }
+
         it 'adds role permission for self' do
           described_class.new(object).update! role_editor => 'editor'
 
@@ -110,7 +111,7 @@ RSpec.describe KnowledgeBase::PermissionsUpdate do
 
             expect(child_category.permissions_effective)
               .to contain_exactly(
-                have_attributes(role: role_editor,  access: 'editor', permissionable: category),
+                have_attributes(role: role_editor, access: 'editor', permissionable: category),
               )
           end
 
@@ -136,7 +137,7 @@ RSpec.describe KnowledgeBase::PermissionsUpdate do
 
             expect(child_category.permissions_effective)
               .to contain_exactly(
-                have_attributes(role: role_editor,  access: 'none', permissionable: category),
+                have_attributes(role: role_editor, access: 'none', permissionable: category),
               )
           end
 

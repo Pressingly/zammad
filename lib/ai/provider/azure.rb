@@ -3,6 +3,48 @@
 class AI::Provider::Azure < AI::Provider
   include AI::Provider::Concerns::HandlesOpenAIMessages
 
+  def self.check_temperature_support!(config, related_object: nil)
+    response = UserAgent.post(
+      config[:url_completions],
+      {
+        messages:    [{ role: 'user', content: 'Hello' }],
+        temperature: 0.1,
+        stream:      false,
+        store:       false,
+      },
+      {
+        **REQUEST_TIMEOUT_OPTIONS,
+        verify_ssl:   true,
+        bearer_token: config[:token],
+        json:         true,
+        log:          log_options(only_on_error: true, related_object:),
+      },
+    )
+
+    evaluate_temperature_probe!(response)
+  rescue CheckTemperatureSupportError
+    raise
+  rescue => e
+    raise CheckTemperatureSupportError, e.message
+  end
+
+  def extract_response_metadata(data)
+    @response_metadata = {
+      model:             data['model'],
+      prompt_tokens:     data.dig('usage', 'prompt_tokens'),
+      completion_tokens: data.dig('usage', 'completion_tokens'),
+      total_tokens:      data.dig('usage', 'total_tokens'),
+    }
+  end
+
+  def chat_url_for(prompt_image:)
+    return config[:url_completions] if !prompt_image.is_a?(::Store)
+
+    config[:url_ocr].presence || config[:url_completions]
+  end
+
+  private
+
   def chat(prompt_system:, prompt_user:, prompt_image:)
     request_body = {
       messages:        messages_for(prompt_system:, prompt_user:, prompt_image:),
@@ -23,9 +65,7 @@ class AI::Provider::Azure < AI::Provider
         verify_ssl:   true,
         bearer_token: config[:token],
         json:         true,
-        log:          {
-          facility: 'AI::Provider',
-        },
+        log:          log_options,
       },
     )
 
@@ -36,98 +76,27 @@ class AI::Provider::Azure < AI::Provider
   end
 
   def embeddings(input:)
-    response = UserAgent.post(
-      config[:url_embeddings],
-      {
-        input: input,
-      },
-      {
-        **REQUEST_TIMEOUT_OPTIONS,
-        verify_ssl:   true,
-        bearer_token: config[:token],
-        json:         true,
-      },
-    )
+    raise NotImplementedError, 'not implemented yet due to missing API'
 
-    # TODO: We cannot hardcode the embedding size here.
-    # We need to get it from the request by counting the returned embeddings.
-    # This should be part of the service that is used later.
-
-    data = validate_response!(response)
-    data['data'].first['embedding']
+    # response = UserAgent.post(
+    #   config[:url_embeddings],
+    #   {
+    #     input: input,
+    #   },
+    #   {
+    #     **REQUEST_TIMEOUT_OPTIONS,
+    #     verify_ssl:   true,
+    #     bearer_token: config[:token],
+    #     json:         true,
+    #   },
+    # )
+    #
+    # # TODO: We cannot hardcode the embedding size here.
+    # # We need to get it from the request by counting the returned embeddings.
+    # # This should be part of the service that is used later.
+    #
+    # data = validate_response!(response)
+    # data['data'].first['embedding']
   end
 
-  def self.ping!(config)
-    url_models = config[:url_completions].gsub(%r{/deployments/.*$}, '/v1/models')
-
-    response = UserAgent.get(
-      url_models,
-      {},
-      {
-        **REQUEST_TIMEOUT_OPTIONS,
-        verify_ssl:   true,
-        bearer_token: config[:token],
-        json:         true,
-        log:          {
-          facility:          'AI::Provider',
-          log_only_on_error: true,
-        },
-      },
-    )
-
-    validate_response!(response)
-
-    nil
-  end
-
-  def self.check_temperature_support!(config)
-    response = UserAgent.post(
-      config[:url_completions],
-      {
-        messages:    [{ role: 'user', content: 'Hello' }],
-        temperature: 0.1,
-        stream:      false,
-        store:       false,
-      },
-      {
-        **REQUEST_TIMEOUT_OPTIONS,
-        verify_ssl:   true,
-        bearer_token: config[:token],
-        json:         true,
-        log:          {
-          facility:          'AI::Provider',
-          log_only_on_error: true,
-        },
-      },
-    )
-
-    return true if response.success?
-
-    data = JSON.parse(response.body)
-    data = data.pop if data.is_a?(Array) # Handle case when response is an array of errors
-    message = data.dig('error', 'message')
-    type = data.dig('error', 'type')
-    param = data.dig('error', 'param')
-    code = data.dig('error', 'code')
-    return false if type == 'invalid_request_error' && param == 'temperature' && code == 'unsupported_value'
-
-    raise message
-  rescue => e
-    raise CheckTemperatureSupportError, e.message
-  end
-
-  def extract_response_metadata(data)
-    @response_metadata = {
-      model:             data['model'],
-      prompt_tokens:     data.dig('usage', 'prompt_tokens'),
-      completion_tokens: data.dig('usage', 'completion_tokens'),
-      total_tokens:      data.dig('usage', 'total_tokens'),
-    }
-  end
-
-  def chat_url_for(prompt_image:)
-    return config[:url_completions] if !prompt_image.is_a?(::Store)
-
-    config[:url_ocr] || config[:url_completions]
-  end
 end

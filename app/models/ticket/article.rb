@@ -45,7 +45,7 @@ class Ticket::Article < ApplicationModel
   before_validation :check_email_recipient_validity, if: :check_email_recipient_raises_error
   before_create :check_subject, :check_body, :check_message_id_md5
   before_update :check_subject, :check_body, :check_message_id_md5
-  after_destroy :store_delete, :update_time_units
+  after_destroy :store_delete, :update_time_units, :cti_caller_id_cleanup
   after_commit :ticket_touch, if: :persisted?
 
   store :preferences
@@ -76,7 +76,8 @@ class Ticket::Article < ApplicationModel
     system_sender = Ticket::Article::Sender.lookup(name: 'System')
     note_type = Ticket::Article::Type.lookup(name: 'note')
 
-    where('sender_id != ? OR type_id = ?', system_sender.id, note_type.id)
+    where('sender_id != ? OR (type_id = ? AND (preferences IS NULL OR preferences NOT LIKE ?))',
+          system_sender.id, note_type.id, '%delivery_message%')
   }
 
   scope :non_system, -> { where.not(sender: Ticket::Article::Sender.lookup(name: 'System')) }
@@ -456,6 +457,11 @@ returns
       object: 'Ticket::Article::Mail',
       o_id:   id,
     )
+  end
+
+  # remove caller IDs extracted from this article's body
+  def cti_caller_id_cleanup
+    Cti::CallerId.where(object: 'Ticket', o_id: id).destroy_all
   end
 
   # recalculate time accounting

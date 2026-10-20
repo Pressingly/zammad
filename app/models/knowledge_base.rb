@@ -4,11 +4,47 @@ class KnowledgeBase < ApplicationModel
   include HasTranslations
   include HasAgentAllowedParams
   include ChecksKbClientNotification
+  include TriggersKnowledgeBaseContentUpdates
 
   AGENT_ALLOWED_NESTED_RELATIONS = %i[translations].freeze
 
   LAYOUTS = %w[grid list].freeze
-  ICONSETS = %w[FontAwesome anticon material ionicons Simple-Line-Icons].freeze
+
+  # How one list of content is ordered when browsed: by hand (`acts_as_list` positions, which is
+  # what every installation had before this existed and what content predating it kept), by title
+  # in the browsed locale, or most recently updated first.
+  #
+  # Stored per list rather than per node, so a category orders its subcategories and its answers
+  # independently (`category_sorting_mode` / `answer_sorting_mode`) — an editor can keep the
+  # subcategories alphabetical while arranging the answers by hand. The knowledge base root lists
+  # categories only and therefore carries the category mode alone, under the same name.
+  SORTING_MODES = %w[manual alphabetical last_update].freeze
+
+  # What a list sorts by before anyone chooses: new content is ordered by title, not by the
+  # creation sequence a `manual` list would fall back to with no hand-made order behind it.
+  #
+  # The knowledge base root takes it from the column default, so every create path fills it without
+  # asking — `InitializeKnowledgeBase` on a fresh install, `KnowledgeBaseSortingMode` on an upgraded
+  # one, where it takes over from the `manual` those columns are backfilled with. A category reads
+  # this constant itself, for the one list it has nothing above it to inherit from (see
+  # KnowledgeBase::Category#inherit_sorting_modes) — so the two have to agree, and a fresh record
+  # compared against this in the model specs is what pins them together.
+  DEFAULT_SORTING_MODE = 'alphabetical'.freeze
+
+  # Folder icon of each supported icon set: the default a new category starts with (see
+  # #default_category_icon) and what every existing category is reset to whenever the icon set is
+  # switched (see #reset_category_icons). Kept in sync with
+  # `App.KnowledgeBaseCategory.defaultIconFor`, which supplies the same defaults to newly created
+  # categories in the legacy frontend.
+  ICONSET_DEFAULT_CATEGORY_ICONS = {
+    'FontAwesome'       => 'f115',
+    'anticon'           => 'e662',
+    'material'          => 'e94d',
+    'ionicons'          => 'f139',
+    'Simple-Line-Icons' => 'e039',
+  }.freeze
+
+  ICONSETS = ICONSET_DEFAULT_CATEGORY_ICONS.keys.freeze
 
   has_many                      :kb_locales, class_name: 'KnowledgeBase::Locale',
                                              inverse_of: :knowledge_base,
@@ -38,13 +74,18 @@ class KnowledgeBase < ApplicationModel
 
   validates :iconset, inclusion: { in: KnowledgeBase::ICONSETS }
 
+  validates :category_sorting_mode, inclusion: { in: KnowledgeBase::SORTING_MODES }
+
   validate :validate_custom_address
 
   before_validation :patch_custom_address
 
   after_create  :set_defaults
+  after_update  :reset_category_icons, if: :saved_change_to_iconset?
   after_destroy :set_kb_active_setting
   after_save    :set_kb_active_setting
+
+  include KnowledgeBase::HasAuditLogs
 
   scope :active, -> { where(active: true) }
 
@@ -137,15 +178,41 @@ class KnowledgeBase < ApplicationModel
   def full_destroy!
     ChecksKbClientNotification.disable_in_all_classes!
 
+    audit_log_name
+
     transaction do
-      # get all categories with their children and reverse to delete children first
-      categories.root.map(&:self_with_children).flatten.reverse.each(&:full_destroy!)
-      translations.each(&:destroy!)
-      kb_locales.each(&:destroy!)
+      # suppress audit log entries of the cascade, the destroy entry
+      # of the knowledge base itself is sufficient
+      AuditLog.suspend do
+        # get all categories with their children, deepest first, to delete children before parents
+        all_children
+          .reorder(KnowledgeBase::Category.recursive_tree_depth_column => :desc)
+          .each(&:full_destroy!)
+        translations.each(&:destroy!)
+        kb_locales.each(&:destroy!)
+
+        # reset the association so the dependent destroy of the knowledge base
+        # does not run the callbacks of the destroyed locales a second time
+        kb_locales.reset
+      end
+
+      # `destroy!`'s `dependent: :restrict_with_exception` check on `categories` reads whatever is
+      # already cached on the association, not a fresh query — without resetting it here, a caller
+      # that touched `categories` earlier (even just `.count`) would see a stale non-empty cache and
+      # `destroy!` would wrongly raise, even though every category was just destroyed above.
+      categories.reset
       destroy!
     end
   ensure
     ChecksKbClientNotification.enable_in_all_classes!
+  end
+
+  # Returns all of this knowledge base's categories via a single recursive CTE instead of one
+  # query per tree level. Each row also carries the CTE's depth and `recursive_tree_path` columns
+  # (an array of category ids from root down to and including itself) — no custom SELECT needed,
+  # which keeps the relation aggregatable (e.g. `.count`).
+  def all_children
+    KnowledgeBase::Category.with_recursive_tree_cte(direction: :down, seed: categories.root)
   end
 
   def visible?
@@ -214,6 +281,11 @@ class KnowledgeBase < ApplicationModel
     scope.any?
   end
 
+  # Icon a category of this knowledge base starts out with, before the user picks their own.
+  def default_category_icon
+    ICONSET_DEFAULT_CATEGORY_ICONS[iconset]
+  end
+
   private
 
   def set_defaults
@@ -261,5 +333,28 @@ class KnowledgeBase < ApplicationModel
   def set_kb_active_setting
     Setting.set 'kb_active', KnowledgeBase.active.exists?
     CanBePublished.update_active_publicly!
+  end
+
+  # A category stores its icon as a bare glyph codepoint of the knowledge base's icon set, so after
+  # a switch every one of them points into the new font — where the same codepoint is usually
+  # unmapped (blank glyph) or, worse, mapped to an entirely unrelated icon. The sets share no
+  # meaningful icon-to-icon mapping, so the icons cannot be carried over; resetting them all to the
+  # new set's folder icon at least keeps the knowledge base rendering, at the price of the previous
+  # (now unrepresentable) choices. Admins are warned about that beforehand in the admin interface.
+  #
+  # Updates record by record on purpose: `update_all` would skip the client notifications and
+  # content-update pings open sessions need to pick up the new icons.
+  def reset_category_icons
+    default_icon = ICONSET_DEFAULT_CATEGORY_ICONS[iconset]
+
+    categories.find_each do |category|
+      category.category_icon = default_icon
+
+      # The icon comes from the validated `iconset`, so there is nothing to validate here — while
+      # validating would drag in every unrelated rule the category and its translations have. A
+      # single category left invalid by an import or a validation bypass would then make the icon set
+      # unswitchable, of all things by aborting the very update which repairs the broken rendering.
+      category.save!(validate: false)
+    end
   end
 end

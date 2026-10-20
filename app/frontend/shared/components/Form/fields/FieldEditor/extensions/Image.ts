@@ -8,7 +8,22 @@ import { dataURLToBlob } from '#shared/utils/files.ts'
 
 const getAttributeFromElement = (element: Element, attr: 'width' | 'height') => {
   const htmlElement = element as HTMLElement
-  return htmlElement.style[attr]
+
+  // Prefer the plain HTML attribute — that's what our own renderHTML emits and what
+  // ImageHandler.vue expects (unitless numeric string, or the '100%'/'auto' defaults).
+  // Fall back to the inline style for externally authored/pasted HTML (e.g. an email's
+  // style="width:400px" or style="width:300pt") that never had the plain attribute set.
+  // Use || rather than ?? so an empty attribute (width="") also falls back to the style.
+  const value = htmlElement.getAttribute(attr) || htmlElement.style[attr]
+  if (!value) return null
+
+  // Percentage values are valid as-is (e.g. "100%").
+  if (value.endsWith('%')) return value
+
+  // Strip any CSS unit suffix and return the numeric part. This handles px, pt, em,
+  // rem, cm, etc. Return null (so the schema default applies) if the result is not finite.
+  const numeric = parseFloat(value)
+  return Number.isFinite(numeric) ? String(numeric) : null
 }
 
 export default Image.extend({
@@ -32,6 +47,18 @@ export default Image.extend({
           }
         },
         parseHTML: (element) => getAttributeFromElement(element, 'height'),
+      },
+
+      // An inline image of a stored record travels as a `cid:` reference, which the backend swaps
+      // for an attachment URL when it hands the body out - moving the cid into this attribute
+      // (HasRichText.insert_urls). On the way back HtmlSanitizer::CidToSrc turns it into
+      // `src="cid:…"` again. tiptap drops any attribute the schema does not declare, and a saved
+      // body that references no cid makes has_rich_text_cleanup_unused_attachments delete every
+      // inline image of the record - so this has to be parsed and rendered, not just tolerated.
+      cid: {
+        default: null,
+        parseHTML: (element) => element.getAttribute('cid'),
+        renderHTML: (attributes) => (attributes.cid ? { cid: attributes.cid } : {}),
       },
 
       isDraggable: {

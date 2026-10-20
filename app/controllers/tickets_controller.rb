@@ -261,23 +261,25 @@ class TicketsController < ApplicationController
       end
     end
 
-    ticket.with_lock do
-      handle_shared_draft(ticket, params[:article])
+    Transaction.execute do
+      ticket.with_lock do
+        handle_shared_draft(ticket, params[:article])
 
-      macro = handle_macro_perform_changes(params['macro.id'], params['macro.perform_changes'])
+        macro = handle_macro_perform_changes(params['macro.id'], params['macro.perform_changes'])
 
-      # NB: Perform optional macro actions, but only after the ticket changes were made.
-      #   This is needed because macros in the legacy app are applied in the frontend, just before the submission.
-      #   However, we can only reliably trigger some of those actions after all the ticket changes are applied.
-      if macro
-        ticket.assign_attributes(clean_params)
-        ticket.perform_changes(macro, 'macro', nil, current_user.id) do |object, _save_needed|
-          object.save!
+        # NB: Perform optional macro actions, but only after the ticket changes were made.
+        #   This is needed because macros in the legacy app are applied in the frontend, just before the submission.
+        #   However, we can only reliably trigger some of those actions after all the ticket changes are applied.
+        if macro
+          ticket.assign_attributes(clean_params)
+          ticket.perform_changes(macro, 'macro', nil, current_user.id) do |object, _save_needed|
+            object.save!
+            article_create(ticket, params[:article]) if params[:article].present?
+          end
+        else
+          ticket.update!(clean_params)
           article_create(ticket, params[:article]) if params[:article].present?
         end
-      else
-        ticket.update!(clean_params)
-        article_create(ticket, params[:article]) if params[:article].present?
       end
     end
 
@@ -536,7 +538,16 @@ class TicketsController < ApplicationController
 
   private
 
+  # Transaction dispatch runs before this and leaves the user context blank, which the asset
+  #   filters treat as unprivileged. Re-establish it, so the response is scoped to the caller
+  #   instead of being redacted as if nobody was logged in.
   def render_reloaded_ticket(ticket, status: :ok)
+    UserInfo.with_user_id(current_user.id) do
+      render_reloaded_ticket_response(ticket, status:)
+    end
+  end
+
+  def render_reloaded_ticket_response(ticket, status:)
     if response_expand?
       result = ticket.reload.attributes_with_association_names
       render(json: result, status:)

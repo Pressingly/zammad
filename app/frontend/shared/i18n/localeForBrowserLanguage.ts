@@ -7,7 +7,7 @@ import type { LastArrayElement } from 'type-fest'
 
 const localeForBrowserLanguage = (
   locales: LocalesQuery['locales'],
-): LastArrayElement<LocalesQuery['locales']> => {
+): NonNullable<LastArrayElement<LocalesQuery['locales']>> => {
   const userLanguages = window.navigator.languages || [window.navigator.language]
 
   for (const userLanguage of userLanguages.values()) {
@@ -23,6 +23,7 @@ const localeForBrowserLanguage = (
   }
 
   return {
+    __typename: 'Locale',
     locale: 'en-us',
     alias: 'en',
     // eslint-disable-next-line zammad/zammad-detect-translatable-string

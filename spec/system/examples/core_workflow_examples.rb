@@ -64,6 +64,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-hidden", visible: :hidden)
       end
     end
@@ -82,6 +83,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-removed", visible: :hidden)
       end
     end
@@ -262,6 +264,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-hidden", visible: :hidden)
       end
     end
@@ -280,6 +283,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-removed", visible: :hidden)
       end
     end
@@ -460,6 +464,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-hidden", visible: :hidden)
       end
     end
@@ -478,6 +483,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-removed", visible: :hidden)
       end
     end
@@ -658,6 +664,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-hidden", visible: :hidden)
       end
     end
@@ -676,6 +683,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-removed", visible: :hidden)
       end
     end
@@ -856,6 +864,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-hidden", visible: :hidden)
       end
     end
@@ -874,6 +883,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-removed", visible: :hidden)
       end
     end
@@ -1017,6 +1027,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-hidden", visible: :all)
       end
     end
@@ -1035,6 +1046,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-removed", visible: :hidden)
       end
     end
@@ -1217,6 +1229,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-hidden", visible: :all)
       end
     end
@@ -1235,6 +1248,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-removed", visible: :hidden)
       end
     end
@@ -1417,6 +1431,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-hidden", visible: :hidden)
       end
     end
@@ -1435,6 +1450,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-removed", visible: :hidden)
       end
     end
@@ -1551,6 +1567,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-hidden", visible: :hidden)
       end
     end
@@ -1569,6 +1586,7 @@ RSpec.shared_examples 'core workflow' do
 
       it 'does perform' do
         before_it.call
+        wait_for_core_workflow
         expect(page).to have_css(".form-group[data-attribute-name='#{field_name}'].is-removed", visible: :hidden)
       end
     end

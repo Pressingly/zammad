@@ -1,0 +1,18 @@
+subscription searchTaskbarItemStateUpdates($taskbarItemId: ID!) {
+  userCurrentTaskbarItemStateUpdates(taskbarItemId: $taskbarItemId) {
+    stateUpdateType
+    taskbarItem {
+      __typename
+      id
+      entity {
+        __typename
+        ... on UserTaskbarItemEntitySearch {
+          query
+          model
+          filters
+          filterCount
+        }
+      }
+    }
+  }
+}

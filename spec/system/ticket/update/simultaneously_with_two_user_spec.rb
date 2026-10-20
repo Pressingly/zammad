@@ -9,7 +9,7 @@ RSpec.describe 'Ticket > Update > Simultaneously with two different user', perfo
 
   around { |example| perform_enqueued_jobs { example.run } }
 
-  # rubocop:disable RSpec/InstanceVariable
+  # rubocop:disable-next RSpec/InstanceVariable
   define :have_avatar do |expected|
     chain(:changed, :text)
 
@@ -65,7 +65,6 @@ RSpec.describe 'Ticket > Update > Simultaneously with two different user', perfo
       ".js-attributeBar .js-avatar .avatar--#{changed_class}"
     end
   end
-  # rubocop:enable RSpec/InstanceVariable
 
   def check_taskbar_tab(ticket_id, title: nil, modified: false)
     tab_data_key = "Ticket-#{ticket_id}"
@@ -216,9 +215,20 @@ RSpec.describe 'Ticket > Update > Simultaneously with two different user', perfo
         check_taskbar_tab(ticket.id, title: 'TTTsome level 2 <b>subject</b> 123äöü')
 
         expect(page).to have_css('.js-textarea', text: 'some other note')
+
+        # Wait for the title-save AJAX to complete from the browser's perspective
+        # before checking the DB, so all cascading requests finish first.
+        await_empty_ajax_queue
+
+        # Wait for the title to be persisted server-side before leaving this
+        # session, ensuring the ActionCable push to the first browser is sent.
+        wait.until { ticket.reload.title == 'TTTsome level 2 <b>subject</b> 123äöü' }
       end
 
-      expect(page).to have_css('.js-objectTitle', text: 'TTTsome level 2 <b>subject</b> 123äöü')
+      # The WebSocket push triggers fetchMayBe which delays the re-fetch by
+      # 1 s, then fires an AJAX call. WebSocket delivery + delay + AJAX can
+      # exceed 30 s on loaded CI machines, so give it 60 s.
+      expect(page).to have_css('.js-objectTitle', text: 'TTTsome level 2 <b>subject</b> 123äöü', wait: 60)
       expect(page).to have_css('.js-textarea', text: 'some note')
 
       check_taskbar_tab(ticket.id, title: 'TTTsome level 2 <b>subject</b> 123äöü', modified: true)

@@ -221,7 +221,6 @@ class ExternalCredential::MicrosoftBase < ExternalCredential::Base::ChannelXoaut
 
     response = UserAgent.post(uri.to_s, params)
     if response.code != 200 && response.body.blank?
-      Rails.logger.error "Request failed! (code: #{response.code})"
       raise "Request failed! (code: #{response.code})"
     end
 
@@ -262,7 +261,6 @@ class ExternalCredential::MicrosoftBase < ExternalCredential::Base::ChannelXoaut
 
     response = UserAgent.post(uri.to_s, params)
     if response.code != 200 && response.body.blank?
-      Rails.logger.error "Request failed! (code: #{response.code})"
       raise "Request failed! (code: #{response.code})"
     end
 
@@ -307,7 +305,7 @@ class ExternalCredential::MicrosoftBase < ExternalCredential::Base::ChannelXoaut
     split = id_token.split('.')[1]
     return if split.blank?
 
-    JSON.parse(Base64.decode64(split)).symbolize_keys
+    JSON.parse(Base64.urlsafe_decode64(split)).symbolize_keys
   end
 
   # The credential uses Zammad's shared multi-tenant Microsoft app registration

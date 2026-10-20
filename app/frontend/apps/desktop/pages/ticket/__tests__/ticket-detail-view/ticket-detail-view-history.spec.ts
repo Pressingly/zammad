@@ -10,7 +10,8 @@ import { waitForNextTick } from '#tests/support/utils.ts'
 import { mockTicketQuery } from '#shared/entities/ticket/graphql/queries/ticket.mocks.ts'
 import { createDummyTicket } from '#shared/entities/ticket-article/__tests__/mocks/ticket.ts'
 
-import { mockLinkListQuery } from '../../graphql/queries/linkList.mocks.ts'
+import { mockLinkListQuery } from '#desktop/entities/link/graphql/queries/linkList.mocks.ts'
+
 import { mockTicketHistoryQuery } from '../../graphql/queries/ticketHistory.mocks.ts'
 
 describe('Ticket detail view - history', () => {
@@ -82,7 +83,6 @@ describe('Ticket detail view - history', () => {
 
     await waitFor(() => expect(within(flyout).getByText('Created')).toBeInTheDocument())
 
-    expect(within(flyout).getByText('Created')).toBeInTheDocument()
     expect(within(flyout).getByText('John Doe')).toBeInTheDocument()
     expect(within(flyout).getByText('2021-09-29 14:00')).toBeInTheDocument()
   })

@@ -2,34 +2,40 @@
 
 <script setup lang="ts">
 import { type UseElementBoundingReturn, onClickOutside, onKeyDown, useVModel } from '@vueuse/core'
-import { escape } from 'lodash-es'
 import { useTemplateRef } from 'vue'
 import { computed, type ConcreteComponent, nextTick, onUnmounted, ref, type Ref, toRef } from 'vue'
 
-import type {
-  MatchedSelectOption,
-  SelectOption,
-  SelectValue,
-} from '#shared/components/CommonSelect/types.ts'
+import type { SelectOption, SelectValue } from '#shared/components/CommonSelect/types.ts'
 import type { AutoCompleteOption } from '#shared/components/Form/fields/FieldAutocomplete/types.ts'
 import { useFocusWhenTyping } from '#shared/composables/useFocusWhenTyping.ts'
+import { useOnEmitter } from '#shared/composables/useOnEmitter.ts'
 import { useTrapTab } from '#shared/composables/useTrapTab.ts'
 import { useTraverseOptions } from '#shared/composables/useTraverseOptions.ts'
-import { i18n } from '#shared/i18n.ts'
 import { useLocaleStore } from '#shared/stores/locale.ts'
 import stopEvent from '#shared/utils/events.ts'
 import testFlags from '#shared/utils/testFlags.ts'
 
 import CommonLoader from '#desktop/components/CommonLoader/CommonLoader.vue'
 import { useTransitionCollapse } from '#desktop/composables/useTransitionCollapse.ts'
+import { useTransitionConfig } from '#desktop/composables/useTransitionConfig.ts'
 
 import CommonSelectItem from './CommonSelectItem.vue'
 import { useCommonSelect } from './useCommonSelect.ts'
 
 import type { CommonSelectInternalInstance, DropdownOptionsAction } from './types.ts'
+import type { Component } from 'vue'
+
+type ComplexSelectValue = { value: SelectValue; label: string }
+
+type CommonSelectValue =
+  | SelectValue
+  | SelectValue[]
+  | ComplexSelectValue
+  | ComplexSelectValue[]
+  | null
 
 export interface Props {
-  modelValue?: SelectValue | SelectValue[] | { value: SelectValue; label: string } | null
+  modelValue?: CommonSelectValue
   options: AutoCompleteOption[] | SelectOption[]
   /**
    * Do not modify local value
@@ -42,6 +48,18 @@ export interface Props {
   noOptionsLabelTranslation?: boolean
   filter?: string
   optionIconComponent?: ConcreteComponent
+  /**
+   * Replaces the whole option row, instead of only its icon.
+   *   Must implement the `CommonSelectOptionProps` contract, defaults to `CommonSelectItem`.
+   */
+  optionComponent?: ConcreteComponent
+  /**
+   * Lays the options out as a wrapping grid, instead of a vertical list. Intended to be
+   *   combined with a tile-shaped `optionComponent`, which determines the size of a single
+   *   cell, and therefore the resulting number of columns. Since the tiles sit flush against
+   *   the clipped dropdown edges, they should use an inset focus indicator.
+   */
+  gridLayout?: boolean
   initiallyEmpty?: boolean
   emptyInitialLabelText?: string
   actions?: DropdownOptionsAction[]
@@ -149,6 +167,15 @@ const openDropdown = (bounds: UseElementBoundingReturn, height: Ref<number>) => 
   })
 }
 
+// In case the dropdown is open and the layout changes, we need to update the position of the dropdown just in case.
+useOnEmitter('resize-layout', () => {
+  if (!showDropdown.value) return
+
+  nextTick(() => {
+    inputElementBounds?.update()
+  })
+})
+
 const moveFocusToDropdown = (lastOption = false) => {
   // Focus selected or first available option.
   //   https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Roles/listbox_role#keyboard_interactions
@@ -184,8 +211,16 @@ onUnmounted(() => {
 
 defineExpose(exposedInstance)
 
+const OptionComponent = computed<Component>(() => props.optionComponent ?? CommonSelectItem)
+
 // https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Roles/listbox_role#keyboard_interactions
-useTraverseOptions(dropdownElement, { direction: 'vertical' })
+useTraverseOptions(dropdownElement, {
+  // In grid layout the options are traversed along their rows, wrapping around at the end.
+  direction: props.gridLayout ? 'horizontal' : 'vertical',
+  // Wrapping around must not land on the actions in the header or on any footer content,
+  //   they are not options.
+  filterOption: (element) => !props.gridLayout || element.getAttribute('role') === 'option',
+})
 
 // - Type-ahead is recommended for all listboxes, especially those with more than seven options
 useFocusWhenTyping(dropdownElement)
@@ -199,9 +234,39 @@ onKeyDown(
   { target: dropdownElement as Ref<EventTarget> },
 )
 
-const isCurrentValue = (value: string | number | boolean) => {
+const isCurrentValue = (value: CommonSelectValue) => {
   if (props.multiple && Array.isArray(localValue.value)) {
-    return localValue.value.includes(value)
+    return localValue.value.some((v) => {
+      if (typeof v === 'object' && v !== null && 'value' in v) {
+        if (typeof value === 'object' && value !== null && 'value' in value) {
+          return v.value === value.value
+        }
+
+        return v.value === value
+      }
+
+      if (typeof value === 'object' && value !== null && 'value' in value) {
+        return v === value.value
+      }
+
+      return v === value
+    })
+  }
+
+  if (
+    typeof localValue.value === 'object' &&
+    localValue.value !== null &&
+    'value' in localValue.value
+  ) {
+    if (typeof value === 'object' && value !== null && 'value' in value) {
+      return localValue.value.value === value.value
+    }
+
+    return localValue.value.value === value
+  }
+
+  if (typeof value === 'object' && value !== null && 'value' in value) {
+    return localValue.value === value.value
   }
 
   return localValue.value === value
@@ -220,10 +285,10 @@ const select = (option: SelectOption) => {
   }
 
   if (props.multiple && Array.isArray(localValue.value)) {
-    if (localValue.value.includes(option.value)) {
-      localValue.value = localValue.value.filter((v) => v !== option.value)
+    if (localValue.value.includes(option.value as never)) {
+      localValue.value = localValue.value.filter((v) => v !== option.value) as never
     } else {
-      localValue.value.push(option.value)
+      localValue.value.push(option.value as never)
     }
 
     return
@@ -267,47 +332,13 @@ const selectAll = (focusInput = false) => {
   focusFirstOption()
 }
 
-const highlightedOptions = computed(() =>
-  props.options.map((option) => {
-    let label = option.label || i18n.t('%s (unknown)', option.value.toString())
-
-    // Highlight the matched text within the option label by re-using passed regex match object.
-    //   This approach has several benefits:
-    //   - no repeated regex matching in order to identify matched text
-    //   - support for matched text with accents, in case the search keyword didn't contain them (and vice-versa)
-    if (option.match && option.match[0]) {
-      const labelBeforeMatch = label.slice(0, option.match.index)
-
-      // Do not use the matched text here, instead use part of the original label in the same length.
-      //   This is because the original match does not include accented characters.
-      const labelMatchedText = label.slice(
-        option.match.index,
-        option.match.index + option.match[0].length,
-      )
-
-      const labelAfterMatch = label.slice(option.match.index + option.match[0].length)
-
-      const highlightClasses = option.disabled
-        ? 'bg-blue-200 dark:bg-gray-300'
-        : 'bg-blue-600 dark:bg-blue-900 group-hover:bg-blue-800 group-hover:group-focus:bg-blue-600 dark:group-hover:group-focus:bg-blue-900 group-hover:text-white group-focus:text-black dark:group-focus:text-white group-hover:group-focus:text-black dark:group-hover:group-focus:text-white'
-
-      label = `${escape(labelBeforeMatch)}<span class="${highlightClasses}">${escape(labelMatchedText)}</span>${escape(labelAfterMatch)}`
-    }
-
-    return {
-      ...option,
-      matchedLabel: label,
-    } as MatchedSelectOption
-  }),
-)
-
 const emptyLabelText = computed(() => {
   if (!props.initiallyEmpty) return __('No results found')
   return props.filter ? __('No results found') : props.emptyInitialLabelText
 })
 
-const { collapseDuration, collapseEnter, collapseAfterEnter, collapseLeave } =
-  useTransitionCollapse()
+const { transitions } = useTransitionConfig()
+const { collapseEnter, collapseAfterEnter, collapseLeave } = useTransitionCollapse()
 
 const dropdownActions = computed(() => {
   return [
@@ -367,8 +398,8 @@ const goToChildPage = ({ option, noFocus }: { option: AutoCompleteOption; noFocu
   />
   <Teleport to="body">
     <Transition
-      :name="isTargetVisible ? 'collapse' : 'none'"
-      :duration="collapseDuration"
+      :name="transitions.collapse"
+      :appear="isTargetVisible"
       @enter="collapseEnter"
       @after-enter="collapseAfterEnter"
       @leave="collapseLeave"
@@ -387,6 +418,9 @@ const goToChildPage = ({ option, noFocus }: { option: AutoCompleteOption; noFocu
             :class="{
               'rounded-t-lg border-t': hasDirectionUp,
               'rounded-b-lg border-b': !hasDirectionUp,
+              // Grid cells cannot round themselves, since their position within the layout is
+              //   not known upfront, therefore the container has to clip them.
+              'overflow-hidden': gridLayout,
             }"
           >
             <div
@@ -431,15 +465,20 @@ const goToChildPage = ({ option, noFocus }: { option: AutoCompleteOption; noFocu
               tabindex="-1"
               class="w-full overflow-y-auto"
             >
-              <Transition name="none" mode="out-in">
-                <div v-if="options.length">
-                  <CommonSelectItem
-                    v-for="option in filter ? highlightedOptions : options"
+              <Transition mode="out-in">
+                <div v-if="options.length" role="none" :class="{ 'flex flex-wrap': gridLayout }">
+                  <component
+                    :is="OptionComponent"
+                    v-for="option in options"
                     :key="String(option.value)"
                     :class="{
                       'first:rounded-t-lg':
-                        hasDirectionUp && !isChildPage && (!multiple || !hasMoreSelectableOptions),
-                      'last:rounded-b-lg': !hasDirectionUp,
+                        !gridLayout &&
+                        hasDirectionUp &&
+                        !isChildPage &&
+                        !dropdownActions.length &&
+                        (!multiple || !hasMoreSelectableOptions),
+                      'last:rounded-b-lg': !gridLayout && !hasDirectionUp,
                     }"
                     :selected="isCurrentValue(option.value)"
                     :multiple="multiple"
@@ -452,22 +491,8 @@ const goToChildPage = ({ option, noFocus }: { option: AutoCompleteOption; noFocu
                   />
                 </div>
 
-                <div v-else-if="isLoading" class="flex items-center">
-                  <CommonLoader
-                    v-if="!options.length"
-                    class="ltr:ml-2 rtl:mr-2"
-                    size="small"
-                    loading
-                  />
-                  <CommonSelectItem
-                    :option="{
-                      label: __('Loading…'),
-                      value: '',
-                      disabled: true,
-                    }"
-                    no-selection-indicator
-                    no-interaction
-                  />
+                <div v-else-if="isLoading" class="px-2.5 py-2.5">
+                  <CommonLoader class="w-full" size="small" loading />
                 </div>
                 <CommonSelectItem
                   v-else-if="!options.length"

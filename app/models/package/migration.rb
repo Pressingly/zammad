@@ -57,7 +57,7 @@ class Package::Migration < ApplicationModel
         logger.info "NOTICE: down package migration '#{migration}'"
         load "#{location}/#{migration}"
         classname = name.camelcase
-        classname.constantize.down
+        AuditLog.suspend { classname.constantize.down }
         record = Package::Migration.find_by(name: package.underscore, version: version)
         record&.destroy
 
@@ -68,9 +68,25 @@ class Package::Migration < ApplicationModel
         logger.info "NOTICE: up package migration '#{migration}'"
         load "#{location}/#{migration}"
         classname = name.camelcase
-        classname.constantize.up
+        AuditLog.suspend { classname.constantize.up }
         Package::Migration.create(name: package.underscore, version: version)
       end
+    end
+  end
+
+  # Are there migrations of the given package that have not been executed yet?
+  def self.pending?(package)
+    location = "#{root}/db/addon/#{package.underscore}"
+
+    return false if !File.exist?(location)
+
+    Dir.entries(location).any? do |migration|
+      next false if !migration.end_with?('.rb')
+
+      version = migration[%r{^(.+?)_.*\.rb$}, 1]
+      next false if !version
+
+      !exists?(name: package.underscore, version: version)
     end
   end
 

@@ -72,6 +72,11 @@ const extendDataAttribues = (node: FormKitNode) => {
         then: 'warning',
         else: undefined,
       },
+      'data-alternative-background': {
+        if: '$alternativeBackground === true',
+        then: 'true',
+        else: undefined,
+      },
     },
   })
 }

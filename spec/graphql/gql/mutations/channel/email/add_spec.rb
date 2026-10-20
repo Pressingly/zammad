@@ -33,6 +33,7 @@ RSpec.describe Gql::Mutations::Channel::Email::Add, type: :graphql do
       sslVerify: false,
     }
   end
+
   let(:inbound_configuration) do
     {
       adapter:        'imap',
@@ -49,7 +50,6 @@ RSpec.describe Gql::Mutations::Channel::Email::Add, type: :graphql do
       archiveStateId: Ticket::State.find_by(name: 'closed').id,
     }
   end
-  let(:group) { create(:group) }
 
   let(:variables) do
     {
@@ -63,7 +63,15 @@ RSpec.describe Gql::Mutations::Channel::Email::Add, type: :graphql do
     }
   end
 
+  let(:group)      { create(:group) }
+  let(:docker_env) { false }
+
   before do
+    if docker_env
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with('ZAMMAD_DOCKER').and_return('true')
+    end
+
     gql.execute(query, variables: variables)
   end
 
@@ -76,7 +84,7 @@ RSpec.describe Gql::Mutations::Channel::Email::Add, type: :graphql do
           host:       'nonexisting.host.local',
           port:       25,
           user:       'some@example.com',
-          password:   'password',
+          password:   SensitiveParamsHelper::SENSITIVE_MASK,
           ssl_verify: false,
         }
       }
@@ -89,7 +97,7 @@ RSpec.describe Gql::Mutations::Channel::Email::Add, type: :graphql do
           port:             993,
           ssl:              'ssl',
           user:             'some@example.com',
-          password:         'password',
+          password:         SensitiveParamsHelper::SENSITIVE_MASK,
           folder:           'some_folder',
           keep_on_server:   true,
           ssl_verify:       false,
@@ -100,10 +108,36 @@ RSpec.describe Gql::Mutations::Channel::Email::Add, type: :graphql do
       }
     end
 
+    # the passwords are masked in the response (ChannelType), but stored unmasked
     it 'creates the channel' do
       expect(gql.result.data[:channel]).to include(options: include(
         inbound: options_inbound, outbound: options_outbound
       ))
+    end
+
+    it 'stores the given passwords' do
+      expect(Channel.last.options).to include(
+        'inbound'  => include('options' => include('password' => 'password')),
+        'outbound' => include('options' => include('password' => 'password')),
+      )
+    end
+
+    context 'when outbound adapter is sendmail' do
+      let(:outbound_configuration) { { adapter: 'sendmail' } }
+
+      it 'creates the channel' do
+        expect(gql.result.data[:channel]).to include(options: include(
+          outbound: include(adapter: 'sendmail')
+        ))
+      end
+
+      context 'when running in docker environment' do
+        let(:docker_env) { true }
+
+        it 'fails with validation error' do
+          expect(gql.result.error_message).to include('Unsupported outbound adapter: "sendmail"')
+        end
+      end
     end
   end
 

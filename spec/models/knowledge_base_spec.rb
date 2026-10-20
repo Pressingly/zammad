@@ -20,6 +20,62 @@ RSpec.describe KnowledgeBase, type: :model do
   it { is_expected.to validate_inclusion_of(:iconset).in_array(KnowledgeBase::ICONSETS) }
   it { is_expected.to validate_inclusion_of(:category_layout).in_array(KnowledgeBase::LAYOUTS) }
   it { is_expected.to validate_inclusion_of(:homepage_layout).in_array(KnowledgeBase::LAYOUTS) }
+  it { is_expected.to validate_inclusion_of(:category_sorting_mode).in_array(KnowledgeBase::SORTING_MODES) }
+
+  # The root lists categories only, so it carries that one mode — a category has one per list.
+  #   Built without the factory, which pins `manual` for the suite's order-dependent examples.
+  it 'starts out sorting its categories by the default mode' do
+    expect(described_class.new.category_sorting_mode).to eq(KnowledgeBase::DEFAULT_SORTING_MODE)
+  end
+
+  it 'keeps a sorting mode it was created with' do
+    expect(create(:knowledge_base, category_sorting_mode: 'last_update').category_sorting_mode)
+      .to eq('last_update')
+  end
+
+  describe 'audit log' do
+    before { Setting.set('system_init_done', true) }
+
+    let(:audit_logs) { AuditLog.where(auditable_type: described_class.name) }
+
+    context 'when knowledge base is created' do
+      it 'creates an audit log record' do
+        expect { knowledge_base }.to change(audit_logs.where(action_type: 'create'), :count).by(1)
+      end
+
+      it 'records the default translation title as auditable name' do
+        expect(audit_logs.find_by(action_type: 'create', auditable_id: knowledge_base.id).auditable_name)
+          .to eq(knowledge_base.translation_primary.title)
+      end
+    end
+
+    context 'when knowledge base is updated' do
+      it 'creates an audit log record' do
+        knowledge_base
+
+        expect { knowledge_base.update!(color_highlight: '#BBB') }
+          .to change(audit_logs.where(action_type: 'update', auditable_id: knowledge_base.id), :count).by(1)
+      end
+    end
+
+    context 'when knowledge base is fully destroyed' do
+      it 'creates only a single destroy entry without entries for the destroyed locales' do
+        knowledge_base
+
+        expect { knowledge_base.full_destroy! }
+          .to change(AuditLog.where(action_type: 'destroy'), :count).by(1)
+      end
+
+      it 'records the translation title as auditable name' do
+        title = knowledge_base.translation_primary.title
+
+        knowledge_base.full_destroy!
+
+        expect(audit_logs.find_by(action_type: 'destroy', auditable_id: knowledge_base.id).auditable_name)
+          .to eq(title)
+      end
+    end
+  end
 
   context 'activation' do
     it 'on by default' do
@@ -53,12 +109,113 @@ RSpec.describe KnowledgeBase, type: :model do
   end
 
   context 'acceptable colors' do
-    let(:allowed_values) { ['#aaa', '#ff0000', 'rgb(0,100,100)', 'hsl(0,100%,50%)'] }
+    let(:allowed_values)     { ['#aaa', '#ff0000', 'rgb(0,100,100)', 'hsl(0,100%,50%)'] }
     let(:not_allowed_values) { ['aaa', '#aa', '#ff000', 'rgb(0,100,100', 'def(0,100%,0.5)', 'test'] }
 
     %i[color_header color_header_link color_highlight].each do |attr|
       it { is_expected.to allow_values(*allowed_values).for(attr) }
       it { is_expected.not_to allow_values(*not_allowed_values).for(attr) }
+    end
+  end
+
+  describe 'category icons of a switched icon set' do
+    let!(:category)    { create(:knowledge_base_category, knowledge_base: knowledge_base, category_icon: 'f04b') }
+    let!(:subcategory) { create(:knowledge_base_category, knowledge_base: knowledge_base, parent: category, category_icon: 'f0c5') }
+
+    it 'resets the icons of all categories to the new icon set default' do
+      knowledge_base.update!(iconset: 'material')
+
+      expect([category.reload, subcategory.reload].map(&:category_icon))
+        .to eq(%w[e94d e94d])
+    end
+
+    it 'resets to a default icon which exists in the new icon set', :aggregate_failures do
+      (KnowledgeBase::ICONSETS - [knowledge_base.iconset]).each do |iconset|
+        knowledge_base.update!(iconset: iconset)
+
+        expect(category.reload.category_icon).to eq(KnowledgeBase::ICONSET_DEFAULT_CATEGORY_ICONS[iconset])
+        expect(icon_font_codepoints(iconset)).to include(category.category_icon)
+      end
+    end
+
+    it 'keeps the icons when another attribute is updated' do
+      expect { knowledge_base.update!(color_highlight: '#BBB') }
+        .not_to change { category.reload.category_icon }
+    end
+
+    # The switch repairs broken rendering, so it must not be held up by a category which some import
+    # or validation bypass left invalid in an entirely unrelated way.
+    it 'resets the icon of a category which does not pass validation' do
+      category.translations.first.update_column(:title, '')
+
+      knowledge_base.update!(iconset: 'material')
+
+      expect(category.reload.category_icon).to eq('e94d')
+    end
+
+    it 'keeps the icons of categories of another knowledge base' do
+      other_category = create(:knowledge_base_category, category_icon: 'f04b')
+
+      expect { knowledge_base.update!(iconset: 'material') }
+        .not_to change { other_category.reload.category_icon }
+    end
+
+    # Open sessions render the icons from their own copy of the category records, so a reset which
+    # does not notify them leaves the broken icons on screen until a manual reload.
+    it 'notifies clients about the changed categories', performs_jobs: true do
+      clear_jobs
+
+      knowledge_base.update!(iconset: 'material')
+
+      expect(ChecksKbClientNotificationJob)
+        .to have_been_enqueued.with('KnowledgeBase::Category', subcategory.id)
+    end
+
+    def icon_font_codepoints(iconset)
+      JSON.parse(Rails.public_path.join("assets/icon-fonts/#{iconset}.json").read)
+        .fetch('icons')
+        .pluck('unicode')
+    end
+  end
+
+  describe '#full_destroy!' do
+    let(:knowledge_base) { create(:kb_category_with_tree).knowledge_base }
+
+    before { knowledge_base }
+
+    it 'destroys every category in a multi-level tree' do
+      expect { knowledge_base.full_destroy! }
+        .to change(KnowledgeBase::Category, :count).by(-knowledge_base.categories.count)
+    end
+  end
+
+  context 'with a category tree at the deepest allowed nesting (psql)' do
+    # The recursive CTE walks are capped at HasRecursiveCteQuery::MAX_DEPTH_LIMIT, which must
+    # cover every tree the business limit permits — a cap below it silently loses categories in
+    # traversal, falsely fails the circular-reference validation one level further down, and
+    # makes #full_destroy! raise ActiveRecord::DeleteRestrictionError.
+    let(:depth) { KnowledgeBase::Category.max_depth }
+
+    let!(:chain) do
+      [create(:knowledge_base_category, knowledge_base: knowledge_base)].tap do |categories|
+        (depth - 1).times do
+          child = build(:knowledge_base_category, knowledge_base: knowledge_base)
+          child.parent = categories.last
+          child.save!(validate: false) # skip validations to build the fixture fast
+          categories << child
+        end
+      end
+    end
+
+    it 'traverses, validates against, and destroys the whole tree', :aggregate_failures do
+      expect(chain.first.self_with_children.count).to eq(depth)
+
+      fresh = build(:knowledge_base_category, knowledge_base: knowledge_base)
+      fresh.parent = chain.last
+      expect(fresh.tap(&:valid?).errors[:parent_id])
+        .to contain_exactly('would exceed the allowed nesting depth') # depth limit, NOT a false circular-reference error
+
+      expect { knowledge_base.full_destroy! }.to change(KnowledgeBase::Category, :count).by(-depth)
     end
   end
 end

@@ -15,6 +15,7 @@ class Ticket < ApplicationModel
   include HasObjectManagerAttributes
   include HasTaskbars
   include HasRecentCloses
+  include HasRecentViews
   include Ticket::CallsStatsTicketReopenLog
   include Ticket::EnqueuesUserTicketCounterJob
   include Ticket::ResetsPendingTimeSeconds
@@ -37,8 +38,8 @@ class Ticket < ApplicationModel
 
   store :preferences
   after_initialize :check_defaults, if: :new_record?
-  before_create  :check_generate, :check_defaults, :check_title, :set_default_state, :set_default_priority
-  before_update  :check_defaults, :check_title, :reset_pending_time, :check_owner_active
+  before_create :check_generate, :check_defaults, :check_title, :set_default_state, :set_default_priority
+  before_update :check_defaults, :check_title, :reset_pending_time, :check_owner_active
 
   # This must be loaded late as it depends on the internal before_create and before_update handlers of ticket.rb.
   include Ticket::SetsLastOwnerUpdateTime
@@ -60,9 +61,13 @@ class Ticket < ApplicationModel
 
   core_workflow_screens 'create_middle', 'edit', 'overview_bulk'
   core_workflow_admin_screens 'create_middle', 'edit'
+  core_workflow_permission 'ticket.agent', 'ticket.customer'
 
   taskbar_entities 'TicketZoom', 'TicketCreate'
   taskbar_ignore_state_updates_entities 'TicketZoom'
+
+  # Everyone who may see the ticket belongs in its live user list, customers included.
+  taskbar_live_user_pundit_method :show?
 
   activity_stream_attributes_ignored :organization_id, # organization_id will change automatically on user update
                                      :create_article_type_id,
@@ -105,8 +110,8 @@ class Ticket < ApplicationModel
   validates :note, length: { maximum: 250 }
   sanitized_html :note
 
-  belongs_to    :group, optional: true
-  belongs_to    :organization, optional: true
+  belongs_to :group, optional: true
+  belongs_to :organization, optional: true
 
   has_many      :articles, -> { reorder(:created_at, :id) }, class_name: 'Ticket::Article', after_add: :cache_update, after_remove: :cache_update, dependent: :destroy, inverse_of: :ticket
   has_many      :ticket_time_accounting, class_name: 'Ticket::TimeAccounting', dependent: :destroy, inverse_of: :ticket
@@ -211,15 +216,15 @@ returns
     ticket_auto_assignment_selector = Setting.get('ticket_auto_assignment_selector')
     return if ticket_auto_assignment_selector.blank?
 
-    condition = ticket_auto_assignment_selector[:condition].merge(
-      'ticket.id' => {
-        'operator' => 'is',
-        'value'    => id,
-      }
+    ticket_count, tickets = Ticket.selectors(
+      ticket_auto_assignment_selector[:condition],
+      limit:        1,
+      current_user: user,
+      access:       'full',
+      ticket_id:    id,
     )
-
-    ticket_count, = Ticket.selectors(condition, limit: 1, current_user: user, access: 'full')
     return if ticket_count.to_i.zero?
+    return if tickets.take.id != id
 
     update!(owner: user)
   end
@@ -422,6 +427,15 @@ returns
         link_object_target_value: id,
       ).update_all(link_object_target_value: data[:ticket_id])
       # rubocop:enable Rails/SkipsModelValidations
+
+      # a link between the two merged tickets now points to the target ticket
+      # itself, which is not a valid link (see #6319)
+      Link.where(
+        link_object_source_id:    ticket_source_id,
+        link_object_source_value: data[:ticket_id],
+        link_object_target_id:    ticket_source_id,
+        link_object_target_value: data[:ticket_id],
+      ).destroy_all
 
       # link tickets
       Link.add(

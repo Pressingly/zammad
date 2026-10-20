@@ -133,6 +133,9 @@ class CreateBase < ActiveRecord::Migration[4.2]
       t.timestamps limit: 3, null: false
     end
     add_index :groups, [:name], unique: true
+    add_index :groups, :parent_id
+    add_index :groups, [:email_address_id]
+    add_index :groups, [:signature_id]
     add_foreign_key :groups, :signatures
     add_foreign_key :groups, :email_addresses
     add_foreign_key :groups, :users, column: :created_by_id
@@ -358,6 +361,7 @@ class CreateBase < ActiveRecord::Migration[4.2]
     end
     add_index :tags, [:o_id]
     add_index :tags, [:tag_object_id]
+    add_index :tags, [:tag_item_id]
     add_foreign_key :tags, :tag_items
     add_foreign_key :tags, :tag_objects
     add_foreign_key :tags, :users, column: :created_by_id
@@ -370,8 +374,9 @@ class CreateBase < ActiveRecord::Migration[4.2]
     end
     add_index :recent_views, [:o_id]
     add_index :recent_views, [:created_by_id]
-    add_index :recent_views, [:created_at]
     add_index :recent_views, [:recent_view_object_id]
+    add_index :recent_views, [:updated_at], order: { updated_at: :desc }
+    add_index :recent_views, %i[o_id recent_view_object_id created_by_id], name: 'index_recent_views_on_object_and_user', unique: true
     add_foreign_key :recent_views, :object_lookups, column: :recent_view_object_id
     add_foreign_key :recent_views, :users, column: :created_by_id
 
@@ -543,6 +548,7 @@ class CreateBase < ActiveRecord::Migration[4.2]
     add_index :online_notifications, [:seen]
     add_index :online_notifications, [:created_at]
     add_index :online_notifications, [:updated_at]
+    add_index :online_notifications, %i[user_id created_at]
     add_foreign_key :online_notifications, :users
     add_foreign_key :online_notifications, :users, column: :created_by_id
     add_foreign_key :online_notifications, :users, column: :updated_by_id
@@ -708,6 +714,8 @@ class CreateBase < ActiveRecord::Migration[4.2]
     add_index :cti_logs, [:call_id], unique: true
     add_index :cti_logs, [:direction]
     add_index :cti_logs, [:from]
+    add_index :cti_logs, [:created_at]
+    add_index :cti_logs, [:queue]
 
     create_table :cti_caller_ids do |t|
       t.string     :caller_id,              limit: 100, null: false
@@ -724,6 +732,7 @@ class CreateBase < ActiveRecord::Migration[4.2]
     add_index :cti_caller_ids, %i[caller_id user_id]
     add_index :cti_caller_ids, %i[object o_id]
     add_index :cti_caller_ids, %i[object o_id level user_id caller_id], name: 'index_cti_caller_ids_on_object_o_id_level_user_id_caller_id'
+    add_index :cti_caller_ids, [:user_id]
     add_foreign_key :cti_caller_ids, :users
 
     create_table :stats_stores do |t|
@@ -747,11 +756,14 @@ class CreateBase < ActiveRecord::Migration[4.2]
       t.column :ip,                   :string, limit: 50,    null: true
       t.column :request,              :text,                 null: false
       t.column :response,             :text,                 null: false
+      t.column :related_object_type,  :string, limit: 100,   null: true
+      t.column :related_object_id,    :integer,              null: true
       t.column :updated_by_id,        :integer,              null: true
       t.column :created_by_id,        :integer,              null: true
       t.timestamps limit: 3, null: false
     end
     add_index :http_logs, [:facility]
+    add_index :http_logs, %i[related_object_type related_object_id]
     add_index :http_logs, [:created_by_id]
     add_index :http_logs, [:created_at]
     add_foreign_key :http_logs, :users, column: :created_by_id
@@ -798,6 +810,7 @@ class CreateBase < ActiveRecord::Migration[4.2]
       t.timestamps limit: 3, null: false
     end
     add_index :mentions, %i[mentionable_id mentionable_type user_id], unique: true, name: 'index_mentions_mentionable_user'
+    add_index :mentions, [:user_id]
     add_foreign_key :mentions, :users, column: :created_by_id
     add_foreign_key :mentions, :users, column: :updated_by_id
     add_foreign_key :mentions, :users, column: :user_id
@@ -885,6 +898,7 @@ class CreateBase < ActiveRecord::Migration[4.2]
       t.timestamps limit: 3, null: false
     end
     add_index       :user_two_factor_preferences, %i[method user_id], unique: true
+    add_index       :user_two_factor_preferences, [:user_id]
     add_foreign_key :user_two_factor_preferences, :users, column: :user_id
     add_foreign_key :user_two_factor_preferences, :users, column: :created_by_id
     add_foreign_key :user_two_factor_preferences, :users, column: :updated_by_id
@@ -953,6 +967,8 @@ class CreateBase < ActiveRecord::Migration[4.2]
       t.timestamps limit: 3
     end
     add_index :ai_analytics_runs, %i[triggered_by_type triggered_by_id], name: 'index_ai_analytics_runs_on_triggered_by'
+    add_index :ai_analytics_runs, [:locale_id]
+    add_index :ai_analytics_runs, [:regeneration_of_id]
 
     create_table :ai_stored_results do |t|
       t.string :identifier, null: false
@@ -972,6 +988,8 @@ class CreateBase < ActiveRecord::Migration[4.2]
       t.index %i[identifier locale_id related_object_id related_object_type],
               unique: true,
               name:   'index_ai_stored_results_on_identifier_and_other'
+      t.index [:ai_analytics_run_id]
+      t.index [:locale_id]
     end
 
     create_table :ai_agents do |t|
@@ -1036,6 +1054,36 @@ class CreateBase < ActiveRecord::Migration[4.2]
 
       t.index %i[ai_analytics_run_id user_id], unique: true
       t.index %i[ai_analytics_run_id created_at], name: 'index_ai_analytics_usages_on_run_id_and_created_at'
+      t.index [:user_id]
+    end
+
+    create_table :ai_provider_connections do |t|
+      t.string  :name,              limit: 250, null: false
+      t.string  :provider,          limit: 250, null: false
+      t.jsonb   :config,                        null: false, default: {}
+      t.boolean :default_chat,                  null: false, default: false
+      t.boolean :default_embedding,             null: false, default: false
+      t.boolean :default_ocr,                   null: false, default: false
+      t.jsonb   :status,                        null: false, default: {}
+
+      t.timestamps limit: 3
+
+      t.index :name, unique: true
+      t.index :default_chat
+      t.index :default_embedding
+      t.index :default_ocr
+    end
+
+    create_table :ai_feature_providers do |t|
+      t.string :identifier, null: false
+
+      t.references :provider_connection, null: false, foreign_key: { to_table: :ai_provider_connections }
+
+      t.jsonb :options, null: false, default: {}
+
+      t.timestamps limit: 3
+
+      t.index :identifier, unique: true
     end
 
     create_table :recent_closes do |t|
@@ -1049,6 +1097,24 @@ class CreateBase < ActiveRecord::Migration[4.2]
               unique: true
 
       t.index :updated_at, order: { updated_at: :desc }
+      t.index [:user_id]
+    end
+
+    create_table :audit_logs do |t|
+      t.references :user, null: true, type: :integer
+      t.string :user_fullname, limit: 255, null: true
+      t.string :action_type, limit: 100, null: false
+      t.references :auditable, polymorphic: true, null: false, type: :integer
+      t.string :auditable_name, limit: 255, null: true
+      t.jsonb :value_from, null: false, default: {}
+      t.jsonb :value_to, null: false, default: {}
+      t.string :source_ip, limit: 50, null: true
+      t.jsonb :preferences, null: false, default: {}
+
+      t.timestamps limit: 3, null: false
+
+      t.index :action_type
+      t.index :created_at
     end
   end
 end

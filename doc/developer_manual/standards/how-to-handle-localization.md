@@ -56,10 +56,14 @@ Writing strings that can be translated well and are a pleasure to read for the e
   `My escalated tickets`). Other pronouns should be avoided, especially when talking about the software/system itself.
   Bad: `I / we could not generate the key`. Use the passive (`The key could not be generated`) or talk about `Zammad`
   instead (`Zammad does not support OTRS BPM processes`).
+- _Use sentence case._ Capitalize titles, headings, buttons, and labels in sentence case - only the first word and
+  proper nouns. Good: `Add new ticket`, `My escalated tickets`. Bad: `Add New Ticket`. Sentence case is easier to scan
+  and reads more naturally than title case. Make sure proper nouns (`Zammad`, `LDAP`, `PGP`) stay capitalized.
+  Learn more about capitalization on [Wikipedia](https://en.wikipedia.org/wiki/Capitalization)
 
 ### Weblate Process Overview
 
-- The codebase has a translation catalog file [i18n/zammad.pot](zammad.pot), which must be kept up-to-date.
+- The codebase has a translation catalog file [i18n/zammad.pot](./../../../i18n/zammad.pot), which must be kept up-to-date.
 - Weblate automatically picks this file up from git and updates its database. Now translators see the new/changed
   strings and can work on them.
 - From time to time, Weblate pushes the new/updated translations via merge request to git.
@@ -100,7 +104,7 @@ you can use this workflow:
 
 ### CoffeeScript
 
-See [i18n.coffee](app/assets/javascripts/app/lib/app_post/i18n.coffee)
+See [i18n.coffee](./../../../app/assets/javascripts/app/lib/app_post/i18n.coffee)
 
 #### Translate With Markup Support
 

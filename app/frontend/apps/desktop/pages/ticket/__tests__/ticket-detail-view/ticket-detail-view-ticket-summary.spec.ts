@@ -2,19 +2,18 @@
 
 import { within } from '@testing-library/vue'
 
+import { mockedApolloClient } from '#tests/graphql/builders/mocks.ts'
 import { visitView } from '#tests/support/components/visitView.ts'
 import { mockApplicationConfig } from '#tests/support/mock-applicationConfig.ts'
 import { mockPermissions } from '#tests/support/mock-permissions.ts'
 import { waitForNextTick } from '#tests/support/utils.ts'
+import { waitFor } from '#tests/support/vitest-wrapper.ts'
 
 import { mockTicketQuery } from '#shared/entities/ticket/graphql/queries/ticket.mocks.ts'
-import { getTicketArticleUpdatesSubscriptionHandler } from '#shared/entities/ticket/graphql/subscriptions/ticketArticlesUpdates.mocks.ts'
 import { createDummyTicket } from '#shared/entities/ticket-article/__tests__/mocks/ticket.ts'
 import {
-  EnumTicketArticleSenderName,
   EnumTicketSummaryGeneration,
   type TicketAiAssistanceSummaryUpdatesPayload,
-  type TicketArticleUpdatesPayload,
 } from '#shared/graphql/types.ts'
 import { convertToGraphQLId } from '#shared/graphql/utils.ts'
 
@@ -24,7 +23,37 @@ import {
 } from '#desktop/pages/ticket/graphql/mutations/ticketAIAssistanceSummarize.mocks.ts'
 import { getTicketAiAssistanceSummaryUpdatesSubscriptionHandler } from '#desktop/pages/ticket/graphql/subscriptions/ticketAIAssistanceSummaryUpdates.mocks.ts'
 
-import type { DeepPartial } from '@apollo/client/utilities'
+// The count the ticket's own updates subscription keeps current - that is what the summary watches,
+//   rather than opening an article subscription of its own.
+const ticketCacheId = (ticketId: string | number = 1) =>
+  mockedApolloClient.cache.identify({
+    __typename: 'Ticket',
+    id: convertToGraphQLId('Ticket', ticketId),
+  })
+
+const raiseArticleCount = async (ticketId: string) => {
+  // The ticket query and the summarize mutation resolve independently, so the ticket's own
+  //   articleCount reading may still be unset at this point. Bumping it before that first
+  //   reading lands would look like the initial hydration to the consumer, which is designed
+  //   to ignore it - wait for a real baseline first so the bump is seen as an actual change.
+  await waitFor(() =>
+    expect(
+      mockedApolloClient.cache.extract()[ticketCacheId(ticketId) as string]?.articleCount,
+    ).toEqual(expect.any(Number)),
+  )
+
+  return mockedApolloClient.cache.modify({
+    id: ticketCacheId(ticketId),
+    fields: { articleCount: (current: number) => current + 1 },
+  })
+}
+
+// A System article touches the ticket like any other, but it is not counted.
+const touchTicket = () =>
+  mockedApolloClient.cache.modify({
+    id: ticketCacheId(),
+    fields: { title: () => 'Touched by a system article' },
+  })
 
 const triggerSummaryUpdate = async (
   data: TicketAiAssistanceSummaryUpdatesPayload,
@@ -43,29 +72,6 @@ const triggerSummaryUpdate = async (
 
   await mockSubscription.trigger({
     ticketAIAssistanceSummaryUpdates: data,
-  })
-}
-
-const triggerArticleUpdate = async (
-  data: DeepPartial<TicketArticleUpdatesPayload>,
-  withInitialSubscription = true,
-) => {
-  const mockSubscription = await getTicketArticleUpdatesSubscriptionHandler()
-
-  if (withInitialSubscription) {
-    await mockSubscription.trigger({
-      ticketArticleUpdates: {
-        addArticle: null,
-        updateArticle: null,
-        removeArticleId: null,
-      },
-    })
-  }
-
-  await waitForNextTick()
-
-  await mockSubscription.trigger({
-    ticketArticleUpdates: data,
   })
 }
 
@@ -155,11 +161,14 @@ describe('Ticket detail view - Ticket summary', () => {
       },
     })
 
-    mockTicketQuery({
-      ticket: createDummyTicket(),
-    })
+    // A ticket ID of its own, rather than the "1" most other tests in this file share: this test
+    //   reads the ticket's own articleCount back out of the cache before bumping it, and a shared
+    //   ID risks that read racing an unrelated mock's write to the same cache entity.
+    const ticketId = '90210'
 
-    const view = await visitView('/tickets/1')
+    mockTicketQuery({ ticket: createDummyTicket({ ticketId }) })
+
+    const view = await visitView(`/tickets/${ticketId}`)
 
     await view.events.click(view.getByRole('button', { name: 'AI summary' }))
 
@@ -169,19 +178,9 @@ describe('Ticket detail view - Ticket summary', () => {
 
     expect(await view.findByRole('heading', { name: 'Customer intent' }))
 
-    await triggerArticleUpdate({
-      addArticle: {
-        createdAt: new Date().toISOString(),
-        sender: {
-          name: EnumTicketArticleSenderName.Customer,
-        },
-        id: convertToGraphQLId('Article', 1),
-      },
-      updateArticle: null,
-      removeArticleId: null,
-    })
+    await raiseArticleCount(ticketId)
 
-    expect(calls).toHaveLength(numberOfCalls + 1)
+    await waitFor(() => expect(calls).toHaveLength(numberOfCalls + 1))
   })
 
   it('does not re-invoke summary update when article of type system is updated', async () => {
@@ -198,9 +197,7 @@ describe('Ticket detail view - Ticket summary', () => {
       },
     })
 
-    mockTicketQuery({
-      ticket: createDummyTicket(),
-    })
+    mockTicketQuery({ ticket: createDummyTicket() })
 
     const view = await visitView('/tickets/1')
 
@@ -212,18 +209,9 @@ describe('Ticket detail view - Ticket summary', () => {
 
     expect(await view.findByRole('heading', { name: 'Customer intent' }))
 
-    await triggerArticleUpdate(
-      {
-        addArticle: {
-          sender: {
-            name: EnumTicketArticleSenderName.System,
-          },
-        },
-        updateArticle: null,
-        removeArticleId: null,
-      },
-      false,
-    )
+    touchTicket()
+
+    await waitForNextTick()
 
     expect(calls).toHaveLength(numberOfCalls)
   })
@@ -480,7 +468,11 @@ describe('Ticket detail view - Ticket summary', () => {
         'The summary could not be generated. Please try again later or contact your administrator.',
       )
 
-      expect(alert).toHaveTextContent('API server error: Authentication problem with provider.')
+      const errorDetail = within(alert).getByText(
+        'API server error: Authentication problem with provider.',
+      )
+
+      expect(errorDetail).toHaveClass('wrap-anywhere')
     })
 
     it('shows no ai provider is selected', async () => {
@@ -515,6 +507,31 @@ describe('Ticket detail view - Ticket summary', () => {
 
     mockTicketQuery({
       ticket: createDummyTicket(),
+    })
+
+    const view = await visitView('/tickets/1')
+
+    expect(view.queryByRole('button', { name: 'AI summary' })).not.toBeInTheDocument()
+  })
+
+  it('hides sidebar when summary is not enabled for the ticket', async () => {
+    mockPermissions(['ticket.agent'])
+
+    mockApplicationConfig({
+      ai_provider: true,
+      ai_assistance_ticket_summary: true,
+      ai_assistance_ticket_summary_config: {
+        open_questions: true,
+        upcoming_events: true,
+        customer_sentiment: true,
+        generate_on: EnumTicketSummaryGeneration.OnTicketDetailOpening,
+      },
+    })
+
+    mockTicketQuery({
+      ticket: createDummyTicket({
+        aiSummaryEnabled: false,
+      }),
     })
 
     const view = await visitView('/tickets/1')

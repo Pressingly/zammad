@@ -67,6 +67,50 @@ class FormUpdater::Updater
 
   private
 
+  # The object's own value for a form field, and whether the object has one at all. The taskbar
+  #   state concerns compare against these to tell a value the user typed from one the object
+  #   already holds (see FormUpdater::Concerns::StoresTaskbarState#should_store_field?).
+  #
+  # Attributes by default. A form whose fields are not attributes of its object overrides them —
+  #   FormUpdater::Updater::KnowledgeBase::Answer::Edit does, where the title lives on a
+  #   translation and the publication state is derived from three timestamps.
+  def object_field?(field)
+    object.respond_to?(field)
+  end
+
+  def object_field_value(field)
+    object[field]
+  end
+
+  # And whether that value is the attribute of the same name, which is what lets the comparison
+  #   below read both sides through the attribute's type. Overridden together with the two above:
+  #   a field an override resolves belongs to that override, even where a column happens to carry
+  #   the same name and would cast the value into something else.
+  def object_field_attribute?(field)
+    object.class.has_attribute?(field)
+  end
+
+  # Whether a submitted value differs from the object's own. The form sends JSON, so a date arrives
+  #   as "2026-08-14" while the record holds a Date, and those two never compare equal - every round
+  #   trip would report a change. A timestamp does compare equal, ActiveSupport coercing the string
+  #   in Time#<=>, but only as far as the minute the form is able to express.
+  def object_field_changed?(field, value)
+    comparable_field_value(field, object_field_value(field)) != comparable_field_value(field, value)
+  end
+
+  # Both sides of that comparison read through the attribute's own type, so they are in the terms
+  #   the record holds them in. Whole minutes for a timestamp, as
+  #   PerformChanges::Action::AttributeUpdates#fetch_new_date_value does and for the same reason:
+  #   FORMAT_DATETIME carries seconds in no locale but hu, so the field cannot express what the
+  #   record holds below the minute. It costs hu a second-level edit going unstored in the draft.
+  def comparable_field_value(field, value)
+    return value if !object_field_attribute?(field)
+
+    value = object.class.type_for_attribute(field).cast(value)
+
+    value.acts_like?(:time) ? value.change(usec: 0, sec: 0) : value
+  end
+
   def resolve_relation_fields
     relation_fields.each do |name, relation_field|
       relation_resolver = get_relation_resolver(relation_field)

@@ -13,6 +13,7 @@ class Organization < ApplicationModel
   include HasObjectManagerAttributes
   include HasTaskbars
   include HasRecentCloses
+  include HasRecentViews
   include CanSelector
   include CanPerformChanges
 
@@ -39,6 +40,7 @@ class Organization < ApplicationModel
 
   core_workflow_screens 'create', 'edit'
   core_workflow_admin_screens 'create', 'edit'
+  core_workflow_permission 'ticket.agent', 'admin.organization'
 
   taskbar_entities 'OrganizationProfile'
 
@@ -80,7 +82,9 @@ class Organization < ApplicationModel
   def attributes_with_association_ids
     attributes = super
     attributes['secondary_member_ids'] = secondary_member_ids
-    attributes
+
+    # `super` filters before this attribute is merged in, so run the filter over the result again.
+    filter_unauthorized_attributes(attributes)
   end
 
   private

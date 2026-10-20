@@ -16,9 +16,9 @@ class AIAgent extends App.ControllerAIFeatureBase
     App.AIAgentType.fetchFull(=>
 
       callbackAgentTypeAttribute = (value, object, attribute, attributes) ->
-        return App.AIAgentType.findByAttribute('custom', true)?.displayName() or '-' if not object.agent_type
+        type = if object.agent_type then App.AIAgentType.find(object.agent_type) else App.AIAgentType.findByAttribute('custom', true)
 
-        App.AIAgentType.find(object.agent_type)?.displayName() or '-'
+        App.Utils.htmlEscape(type?.displayName()) or '-'
 
       callbackReferencesAttribute = (value, object, attribute, attributes) =>
         references = _.compact(_.map(Object.keys(@REFERENCING_OBJECTS), (key) =>
@@ -52,6 +52,11 @@ class AIAgent extends App.ControllerAIFeatureBase
         defaultSortBy: 'name'
         searchBar: true
         searchQuery: @search_query
+        searchShortcuts: [
+          { query: 'active:true', label: __('Active only') }
+          { query: 'created_at:>now-1M', label: __('Created within last month') }
+          { query: 'updated_at:>now-7d', label: __('Updated within last 7 days') }
+        ]
         pageData:
           home: 'ai_agents'
           object: __('AI Agent')
@@ -81,6 +86,7 @@ class AIAgent extends App.ControllerAIFeatureBase
         renderCallback: =>
           @renderPopovers()
           @renderAlert()
+          @renderProviderModal('ai_agent')
         validateOnSubmit: (params) ->
           @maybeHandleJSONParams('parse', params)
       )

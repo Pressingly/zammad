@@ -97,9 +97,8 @@ RSpec.describe 'Keyboard Shortcuts', type: :system do
     context 'for Logout' do
       before do
         visit '/'
-        within :active_content, '.dashboard' do
-          send_keys([:shift, 'l'])
-        end
+        find(:active_content, '.dashboard').click
+        send_keys([:shift, 'l'])
       end
 
       it 'goes to sign in page' do
@@ -147,7 +146,7 @@ RSpec.describe 'Keyboard Shortcuts', type: :system do
       context 'shows the next tab' do
         it 'show the next tab' do
           await_empty_ajax_queue
-          send_keys(%i[shift arrow_right])
+          send_keys(%i[shift right])
 
           within :active_content, 'form.ticket-create' do
             expect(page).to have_title 'Inbound Call'
@@ -158,7 +157,7 @@ RSpec.describe 'Keyboard Shortcuts', type: :system do
       context 'shows the previous tab' do
         it 'shows the previous tab' do
           await_empty_ajax_queue
-          send_keys(%i[shift arrow_left])
+          send_keys(%i[shift left])
 
           within :active_content, 'form.ticket-create' do
             expect(page).to have_title 'Outbound Call'
@@ -176,7 +175,7 @@ RSpec.describe 'Keyboard Shortcuts', type: :system do
 
       it 'add internal note and submit' do
         send_keys(['x'])
-        send_keys(['some text'])
+        send_keys('some text')
 
         within :active_content do
           expect(page).to have_css('.article-new .js-textarea', text: 'some text')
@@ -200,7 +199,7 @@ RSpec.describe 'Keyboard Shortcuts', type: :system do
       it 'add public note and submit' do
         send_keys(['i'])
         send_keys(['x'])
-        send_keys(['some text'])
+        send_keys('some text')
 
         within :active_content do
           expect(page).to have_css('.article-new .js-textarea', text: 'some text')
@@ -218,6 +217,55 @@ RSpec.describe 'Keyboard Shortcuts', type: :system do
 
         within :active_content do
           expect(page).to have_css('.article-new .js-textarea', text: '')
+        end
+      end
+    end
+
+    context 'for ticket reply' do
+      let(:ticket)  { create(:ticket, group: Group.find_by(name: 'Users')) }
+      let(:article) { create(:ticket_article, ticket: ticket) }
+
+      before do
+        article
+
+        visit "#ticket/zoom/#{ticket.id}"
+      end
+
+      it 'opens the email reply without a prior mouse click' do
+        send_keys(['r'])
+
+        within :active_content do
+          expect(page).to have_css('.article-new .js-selectableTypes[data-type="email"]')
+        end
+      end
+
+      it 'opens the email reply via keyboard activation of the article action' do
+        find('.ticket-article-item .js-ArticleAction[data-type="emailReply"]').execute_script('this.focus()')
+
+        send_keys(:enter)
+
+        within :active_content do
+          expect(page).to have_css('.article-new .js-selectableTypes[data-type="email"]')
+        end
+      end
+
+      context 'with an HTML article without body content' do
+        # Incoming email skips the body validation, so such articles can exist.
+        let(:article) { super().tap { |article| article.update_columns(content_type: 'text/html', body: '') } }
+
+        it 'opens the email reply while a selection outside of the article exists' do
+          find('.ticketZoom-header .js-objectNumber').execute_script(<<~JAVASCRIPT)
+            let range = document.createRange()
+            range.selectNodeContents(this)
+            window.getSelection().removeAllRanges()
+            window.getSelection().addRange(range)
+          JAVASCRIPT
+
+          send_keys(['r'])
+
+          within :active_content do
+            expect(page).to have_css('.article-new .js-selectableTypes[data-type="email"]')
+          end
         end
       end
     end

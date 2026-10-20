@@ -9,8 +9,9 @@ import { useDelegateFocus } from '#shared/composables/useDelegateFocus.ts'
 import { i18n } from '#shared/i18n.ts'
 
 import { useTransitionCollapse } from '#desktop/composables/useTransitionCollapse.ts'
+import { useTransitionConfig } from '#desktop/composables/useTransitionConfig.ts'
 
-import type { PermissionsChildOption, PermissionsProps } from './types.ts'
+import type { PermissionsChildOption, PermissionsParentOption, PermissionsProps } from './types.ts'
 
 const props = defineProps<{
   context: PermissionsProps
@@ -66,13 +67,27 @@ const toggleCollapse = (value: string) => {
   collapseLookup.value[value] = !collapseLookup.value[value]
 }
 
+// A parent whose toggle cannot be flipped has nothing else to offer on click, so the whole row
+//  stands in for the chevron for pointer users; the chevron remains the focusable keyboard control.
+//  The disabled switch lets the click through (pointer-events: none).
+const isGroupToggledByRow = (option: PermissionsParentOption) =>
+  !!option.children &&
+  !valueLookup.value[option.value] &&
+  (props.context.disabled || !!option.disabled)
+
+const toggleCollapseByRow = (option: PermissionsParentOption) => {
+  if (!isGroupToggledByRow(option)) return
+
+  toggleCollapse(option.value)
+}
+
 const { delegateFocus } = useDelegateFocus(
   props.context.id,
   `permissions_toggle_${props.context.id}_${props.context?.options && props.context?.options[0]?.value}`,
 )
 
-const { collapseDuration, collapseEnter, collapseAfterEnter, collapseLeave } =
-  useTransitionCollapse()
+const { transitions } = useTransitionConfig()
+const { collapseEnter, collapseAfterEnter, collapseLeave } = useTransitionCollapse()
 </script>
 
 <template>
@@ -93,10 +108,13 @@ const { collapseDuration, collapseEnter, collapseAfterEnter, collapseLeave } =
       :key="`option-${option.value}`"
       class="flex flex-col"
     >
+      <!-- eslint-disable-next-line vuejs-accessibility/interactive-supports-focus, vuejs-accessibility/click-events-have-key-events -->
       <div
         class="flex items-center gap-2.5 px-3 py-2.5"
+        :class="{ 'cursor-pointer': isGroupToggledByRow(option) }"
         role="treeitem"
         :aria-selected="valueLookup[option.value]"
+        @click="toggleCollapseByRow(option)"
       >
         <FormKit
           :id="`permissions_toggle_${context.id}_${option.value}`"
@@ -169,8 +187,7 @@ const { collapseDuration, collapseEnter, collapseAfterEnter, collapseLeave } =
         />
       </div>
       <Transition
-        name="collapse"
-        :duration="collapseDuration"
+        :name="transitions.collapse"
         @enter="collapseEnter"
         @after-enter="collapseAfterEnter"
         @leave="collapseLeave"

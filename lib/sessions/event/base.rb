@@ -2,13 +2,30 @@
 
 class Sessions::Event::Base
 
-  def initialize(params)
-    params.each do |key, value|
-      instance_variable_set :"@#{key}", value
-    end
+  # Abstract event classes only provide shared behaviour for their subclasses
+  # and cannot be dispatched by their event name.
+  def self.abstract_event
+    @abstract_event = true
+  end
+
+  def self.abstract_event?
+    @abstract_event == true
+  end
+
+  abstract_event
+
+  # Only websocket connections provide a client entry, AJAX long polling does not.
+  def initialize(event: nil, payload: nil, session: nil, headers: nil, client_id: nil, client: nil, options: {})
+    @event     = event
+    @payload   = payload
+    @session   = session
+    @headers   = headers
+    @client_id = client_id
+    @client    = client
+    @options   = options
 
     @is_web_socket = false
-    return if !@clients[@client_id]
+    return if !@client
 
     @is_web_socket = true
 
@@ -21,37 +38,39 @@ class Sessions::Event::Base
       ActiveRecord::Base.establish_connection
     end
 
-    session_user_info
+    restore_session_user
   end
 
-  def session_user_info
+  # A session of the legacy web socket transport is restored once, when the login event is
+  #   handled, and is then kept in the web socket server process for the lifetime of the
+  #   connection. Its user therefore has to be re-checked for every event: an account that was
+  #   deactivated or deleted, or locked out by maintenance mode, in the meantime must no longer
+  #   be authorized here, just like it is no longer authorized over HTTP (see
+  #   ApplicationController::Authenticates#authentication_check_prerequesits).
+  def restore_session_user
     return if !@session
     return if !@session['id']
 
     user = User.lookup(id: @session['id'])
-    return if user.blank?
+
+    if !session_user_allowed?(user)
+      @session = @session.except('id')
+      return
+    end
 
     UserInfo.current_user_id = user.id
+  end
+
+  def session_user_allowed?(user)
+    return false if !user&.active?
+    return false if Auth::SwitchedSession.revoked?(@session['switched_from_user_id'])
+
+    !Auth::MaintenanceMode.blocks?(user, switched_from_user_id: @session['switched_from_user_id'])
   end
 
   def self.inherited(subclass)
     super
     subclass.instance_variable_set(:@database_connection, @database_connection)
-  end
-
-  def websocket_send(recipient_client_id, data)
-    msg = if data.instance_of?(Array)
-            data.to_json
-          else
-            "[#{data.to_json}]"
-          end
-    if @clients[recipient_client_id]
-      log 'debug', "ws send #{msg}", recipient_client_id
-      @clients[recipient_client_id][:websocket].send(msg)
-    else
-      log 'debug', "fs send #{msg}", recipient_client_id
-      Sessions.send(recipient_client_id, data)
-    end
   end
 
   def valid_session?

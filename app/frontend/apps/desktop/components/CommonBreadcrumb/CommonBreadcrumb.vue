@@ -3,15 +3,23 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import { i18n } from '#shared/i18n.ts'
 import { useLocaleStore } from '#shared/stores/locale.ts'
 
 import type { BreadcrumbItem } from './types.ts'
 
-const props = defineProps<{
-  items: BreadcrumbItem[]
-  emphasizeLastItem?: boolean
-  size?: 'small' | 'large'
-}>()
+const props = withDefaults(
+  defineProps<{
+    items: BreadcrumbItem[]
+    emphasizeLastItem?: boolean
+    size?: 'small' | 'large'
+    label?: string
+  }>(),
+  {
+    size: 'large',
+    label: __('Breadcrumb navigation'),
+  },
+)
 
 const locale = useLocaleStore()
 // TODO: Missing handling when there is not enough space for the breadcrumb
@@ -25,46 +33,83 @@ const sizeClasses = computed(() => {
 
   return ['text-base'] // default -> 'large'
 })
+
+const getItemLabel = (item: BreadcrumbItem) =>
+  item.noOptionLabelTranslation ? (item.label as string) : i18n.t(item.label as string)
+
+const displayItems = computed(() =>
+  props.items.map((item) => Object.assign({}, item, { displayLabel: getItemLabel(item) })),
+)
 </script>
 
 <template>
-  <nav :class="sizeClasses" :aria-label="$t('Breadcrumb navigation')" class="max-w-full">
+  <nav :class="sizeClasses" :aria-label="$t(label)" class="max-w-full">
     <ol class="flex">
       <li
-        v-for="(item, idx) in items"
+        v-for="(item, idx) in displayItems"
         :key="item.label as string"
         class="flex items-center"
-        :class="lastItemClasses"
+        :class="[lastItemClasses, { 'print:hidden': idx === 0 }]"
       >
         <CommonIcon
-          v-if="item.icon"
+          v-if="!item.route && item.icon"
           :name="item.icon"
           size="xs"
           class="shrink-0 ltr:mr-1 rtl:ml-1"
+          :class="item.iconClass"
         />
 
         <CommonLink
-          v-if="item.route"
-          class="focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-blue-800"
+          v-if="item.route && item.iconOnly"
+          v-tooltip="item.displayLabel"
+          class="inline-flex items-center focus-visible-app-default"
           :link="item.route"
           internal
         >
-          <CommonLabel class="line-clamp-1 hover:text-black hover:dark:text-white" size="large">
-            {{ item.noOptionLabelTranslation ? item.label : $t(item.label as string) }}
+          <CommonIcon
+            v-if="item.icon"
+            :name="item.icon"
+            size="xs"
+            class="shrink-0"
+            :class="item.iconClass"
+          />
+        </CommonLink>
+
+        <CommonLink
+          v-else-if="item.route"
+          v-tooltip.supportive="item.displayLabel"
+          class="inline-flex items-center gap-1 focus-visible-app-default"
+          :link="item.route"
+          internal
+        >
+          <CommonIcon
+            v-if="item.icon"
+            :name="item.icon"
+            size="xs"
+            class="shrink-0"
+            :class="item.iconClass"
+          />
+
+          <CommonLabel
+            class="line-clamp-1! break-all hover:text-black hover:dark:text-white"
+            :size="size"
+          >
+            {{ item.displayLabel }}
           </CommonLabel>
         </CommonLink>
 
         <component
-          :is="items.at(-1) === item ? 'h1' : 'span'"
+          :is="displayItems.at(-1) === item ? 'h1' : 'span'"
           v-else
+          v-tooltip.supportive="item.displayLabel"
           class="line-clamp-1"
           :class="{
             'text-black dark:text-white': item.isActive,
-            'break-all': items.at(-1) === item,
+            'break-all': displayItems.at(-1) === item,
           }"
-          aria-current="page"
+          :aria-current="displayItems.at(-1) === item ? 'page' : undefined"
         >
-          {{ item.noOptionLabelTranslation ? item.label : $t(item.label as string) }}
+          {{ item.displayLabel }}
         </component>
 
         <CommonBadge
@@ -77,14 +122,14 @@ const sizeClasses = computed(() => {
         </CommonBadge>
 
         <CommonIcon
-          v-if="idx !== items.length - 1"
+          v-if="idx !== displayItems.length - 1"
           :name="locale.localeData?.dir === 'rtl' ? 'chevron-left' : 'chevron-right'"
           size="xs"
           class="mx-1 inline-flex shrink-0 text-stone-200 dark:text-neutral-500"
         />
 
         <!-- Add a slot at the end of the last item. -->
-        <slot v-if="idx === items.length - 1" name="trailing" />
+        <slot v-if="idx === displayItems.length - 1" name="trailing" />
       </li>
     </ol>
   </nav>

@@ -1,12 +1,15 @@
 // Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
-import { nextTick, onActivated, ref, type ShallowRef } from 'vue'
+import { onActivated, ref, type ShallowRef } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 
-import { waitForAnimationFrame } from '#shared/utils/helpers.ts'
+import { useReducedMotion } from '#shared/composables/useReducedMotion.ts'
+import { scrollIntoView } from '#shared/utils/dom.ts'
 
 export const useScrollPosition = (scrollContainer?: ShallowRef<HTMLElement | null>) => {
   const scrollPosition = ref<number>()
+
+  const { hasReducedMotion } = useReducedMotion()
 
   const storeScrollPosition = () => {
     if (!scrollContainer?.value) return
@@ -22,30 +25,19 @@ export const useScrollPosition = (scrollContainer?: ShallowRef<HTMLElement | nul
   onBeforeRouteLeave(storeScrollPosition)
   onBeforeRouteUpdate(storeScrollPosition)
 
-  const scrollIntoView = (
+  const scrollTo = async (
     block: 'start' | 'end',
-    options: { behavior: 'instant' | 'smooth' } = { behavior: 'smooth' },
-  ) => {
-    const { behavior } = options
-
-    nextTick(() => {
-      waitForAnimationFrame().then(() => {
-        const container = scrollContainer?.value
-        if (!container || !container?.scrollTo) return
-
-        const top = block === 'start' ? 0 : container.scrollHeight
-        container?.scrollTo({
-          behavior,
-          top,
-        })
-      })
+    options: { behavior: ScrollOptions['behavior'] } = { behavior: 'auto' },
+  ) =>
+    scrollIntoView(scrollContainer, block, {
+      behavior: hasReducedMotion.value ? 'instant' : options.behavior,
+      postFlush: true,
     })
-  }
 
   return {
     scrollPosition,
     storeScrollPosition,
     restoreScrollPosition,
-    scrollIntoView,
+    scrollIntoView: scrollTo,
   }
 }

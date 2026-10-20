@@ -45,5 +45,97 @@ RSpec.describe 'Link', type: :request do
         end
       end
     end
+
+    context 'when a customer requests links of a foreign Ticket', authenticated_as: -> { customer } do
+      let(:ticket)   { create(:ticket) }
+      let(:customer) { create(:customer) }
+      let(:linked)   { create(:ticket, customer: customer) }
+
+      before do
+        create(:link, from: ticket, to: linked)
+
+        get '/api/v1/links', params: { link_object: 'Ticket', link_object_value: ticket.id }, as: :json
+      end
+
+      it 'is forbidden' do
+        expect(response).to have_http_status(:forbidden)
+      end
+    end
+
+    context 'when requesting links of a non-existing object', authenticated_as: -> { agent } do
+      let(:agent) { create(:agent) }
+
+      before do
+        get '/api/v1/links', params: { link_object: 'Ticket', link_object_value: 99_999_999 }, as: :json
+      end
+
+      it 'is forbidden and does not reveal the missing object' do
+        expect(response).to have_http_status(:forbidden)
+      end
+    end
+
+    context 'when requesting links of an unsupported object', authenticated_as: -> { agent } do
+      let(:agent) { create(:agent) }
+
+      before do
+        get '/api/v1/links', params: { link_object: 'Announcement', link_object_value: 1 }, as: :json
+      end
+
+      it 'is forbidden and does not raise' do
+        expect(response).to have_http_status(:forbidden)
+      end
+    end
+  end
+
+  describe 'POST /api/v1/links/add', authenticated_as: -> { agent } do
+    let(:ticket) { create(:ticket) }
+    let(:source) { create(:ticket, group: ticket.group) }
+    let(:agent)  { create(:agent, groups: [ticket.group]) }
+
+    let(:params) do
+      {
+        link_type:                 'normal',
+        link_object_target:        ticket.class.name,
+        link_object_target_value:  ticket.id,
+        link_object_source:        source.class.name,
+        link_object_source_number: source.number,
+      }
+    end
+
+    let(:existing_links) { [] }
+
+    before do
+      existing_links.each { |link| create(:link, **link) }
+
+      post '/api/v1/links/add', params: params, as: :json
+    end
+
+    it 'adds the link' do
+      expect(response).to have_http_status(:created)
+      expect(Link.list(link_object: 'Ticket', link_object_value: ticket.id))
+        .to include(include('link_object_value' => source.id))
+    end
+
+    context 'when the source is the target' do
+      let(:source) { ticket }
+
+      it 'responds with an error' do
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response['error']).to eq('An object cannot be linked to itself.')
+      end
+
+      it 'does not add the link' do
+        expect(Link.list(link_object: 'Ticket', link_object_value: ticket.id)).to be_blank
+      end
+    end
+
+    context 'when the link already exists' do
+      let(:existing_links) { [{ from: source, to: ticket }] }
+
+      it 'responds with an error' do
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response['error']).to eq('Link already exists')
+      end
+    end
   end
 end

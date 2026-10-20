@@ -6,18 +6,26 @@ RSpec.shared_examples 'pagination', authenticated_as: :authenticate do |model:, 
   let(:klass)         { klass }
   let(:base_scope)    { klass.try(:changeable) || klass }
   let(:indexable)     { Models.indexable.include?(klass) }
+  let(:main_column)   { main_column }
 
   def authenticate
     create_list(model, 500, **create_params)
     true
   end
 
+  # The main column is not necessarily the first cell - a table may lead with an icon column.
+  def main_column_text(row)
+    index = page.all('.js-tableHead').index { |header| header['data-column-key'] == main_column.to_s }
+
+    page.first("#{row} td:nth-child(#{(index || 0) + 1})").text.strip
+  end
+
   def current_first_row
-    page.first('.js-tableBody tr:first-child td').text.strip
+    main_column_text('.js-tableBody tr:first-child')
   end
 
   def current_last_row
-    page.first('.js-tableBody tr:last-child td').text.strip
+    main_column_text('.js-tableBody tr:last-child')
   end
 
   def wait_until_first_and_last_changed(first_row, last_row)
@@ -28,8 +36,25 @@ RSpec.shared_examples 'pagination', authenticated_as: :authenticate do |model:, 
 
   def search(search_query)
     search_field = page.find('.js-search')
-    search_field.fill_in with: search_query, fill_options: { clear: :backspace }
+
+    # A prior programmatic blur (below) can leave the cursor position such
+    # that fill_in's clear: :backspace clears nothing and the new value gets
+    # inserted at the start instead of replacing the field - explicitly
+    # select-all before typing, regardless of where the cursor ended up.
+    search_field.click
+    search_field.send_keys([magic_key, 'a'], :backspace)
+    search_field.send_keys(search_query)
     search_field.execute_script('this.blur()')
+
+    wait.until { page.current_url.end_with?("1/#{ERB::Util.url_encode(search_query.to_s)}") }
+
+    # Both the 'input' and the 'blur' event schedule a delayed navigation to
+    # page 1 of the search result. The URL above may already be updated by the
+    # input timer while the blur timer is still pending - wait for it to fire,
+    # otherwise it resets the pager to page 1 after a later page click.
+    wait.until { page.evaluate_script("Object.values(App.Delay._all()).every(function(level) { return !('search' in level) })") }
+
+    await_empty_ajax_queue
   end
 
   before do
@@ -47,6 +72,7 @@ RSpec.shared_examples 'pagination', authenticated_as: :authenticate do |model:, 
     last_row  = current_last_row
     page.first('.js-page', text: '2').click
 
+    await_empty_ajax_queue
     expect(page).to have_css('.js-page.btn--active', text: '2')
     expect(page).to have_no_css('.js-tableBody table-draggable')
     wait_until_first_and_last_changed(first_row, last_row)
@@ -55,6 +81,7 @@ RSpec.shared_examples 'pagination', authenticated_as: :authenticate do |model:, 
     last_row  = current_last_row
     page.first('.js-page', text: '3').click
 
+    await_empty_ajax_queue
     expect(page).to have_css('.js-page.btn--active', text: '3')
     expect(page).to have_no_css('.js-tableBody table-draggable')
     wait_until_first_and_last_changed(first_row, last_row)
@@ -63,6 +90,7 @@ RSpec.shared_examples 'pagination', authenticated_as: :authenticate do |model:, 
     last_row  = current_last_row
     page.first('.js-page', text: '4').click
 
+    await_empty_ajax_queue
     expect(page).to have_css('.js-page.btn--active', text: '4')
     expect(page).to have_no_css('.js-tableBody table-draggable')
     wait_until_first_and_last_changed(first_row, last_row)
@@ -113,7 +141,14 @@ RSpec.shared_examples 'pagination', authenticated_as: :authenticate do |model:, 
         search(search_query)
         wait.until { page.first('.js-pager').all('.js-page').count == 4 }
 
+        # Drain any in-flight AJAX (e.g. the first-page data load triggered by
+        # the search) before navigating to page 2, otherwise that response can
+        # race the click and reset the pager back to page 1.
+        await_empty_ajax_queue
+
         page.first('.js-page', text: '2').click
+
+        await_empty_ajax_queue
         expect(page).to have_css('.js-page.btn--active', text: '2')
         expect(page).to have_no_css('.js-tableBody table-draggable')
 

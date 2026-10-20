@@ -22,6 +22,7 @@ describe Controllers::KnowledgeBase::CategoriesControllerPolicy do
 
     it { is_expected.to permit_action(:show) }
     it { is_expected.to forbid_actions(:create, :update, :destroy) }
+    it { is_expected.to forbid_actions(:reorder_root_categories, :reorder_categories, :reorder_answers) }
   end
 
   context 'when using granular permissions' do
@@ -40,6 +41,8 @@ describe Controllers::KnowledgeBase::CategoriesControllerPolicy do
         let(:access) { 'editor' }
 
         it { is_expected.to permit_actions(:show, :create, :update, :destroy) }
+        it { is_expected.to permit_actions(:reorder_categories, :reorder_answers) }
+        it { is_expected.to forbid_action(:reorder_root_categories) }
       end
 
       context 'when parent category is not editable' do
@@ -47,12 +50,14 @@ describe Controllers::KnowledgeBase::CategoriesControllerPolicy do
 
         it { is_expected.to permit_action(:show) }
         it { is_expected.to forbid_actions(:create, :update, :destroy) }
+        it { is_expected.to forbid_actions(:reorder_root_categories, :reorder_categories, :reorder_answers) }
       end
 
       context 'when parent category is unreachable' do
         let(:access) { 'none' }
 
         it { is_expected.to forbid_actions(:show, :create, :update, :destroy) }
+        it { is_expected.to forbid_actions(:reorder_root_categories, :reorder_categories, :reorder_answers) }
       end
     end
 
@@ -67,12 +72,14 @@ describe Controllers::KnowledgeBase::CategoriesControllerPolicy do
         let(:access) { 'editor' }
 
         it { is_expected.to permit_action(:create) }
+        it { is_expected.to permit_action(:reorder_root_categories) }
       end
 
       context 'when KB is not editable' do
         let(:access) { 'reader' }
 
         it { is_expected.to forbid_action(:create) }
+        it { is_expected.to forbid_action(:reorder_root_categories) }
       end
     end
 
@@ -87,6 +94,7 @@ describe Controllers::KnowledgeBase::CategoriesControllerPolicy do
         let(:access) { 'editor' }
 
         it { is_expected.to permit_actions(:show, :create, :update, :destroy) }
+        it { is_expected.to permit_actions(:reorder_root_categories, :reorder_categories, :reorder_answers) }
       end
 
       context 'when KB is not editable' do
@@ -94,12 +102,14 @@ describe Controllers::KnowledgeBase::CategoriesControllerPolicy do
 
         it { is_expected.to permit_action(:show) }
         it { is_expected.to forbid_actions(:create, :update, :destroy) }
+        it { is_expected.to forbid_actions(:reorder_root_categories, :reorder_categories, :reorder_answers) }
       end
 
       context 'when KB is unreachable' do
         let(:access) { 'none' }
 
         it { is_expected.to forbid_actions(:show, :create, :update, :destroy) }
+        it { is_expected.to forbid_actions(:reorder_root_categories, :reorder_categories, :reorder_answers) }
       end
     end
 
@@ -109,6 +119,21 @@ describe Controllers::KnowledgeBase::CategoriesControllerPolicy do
       it 'raises an appropriate error' do
         expect { policy.create? }.to raise_error(ActiveRecord::RecordNotFound, %r{Couldn't find KnowledgeBase without an ID})
       end
+    end
+  end
+
+  # This policy used to inherit `default_permit!('knowledge_base.*')` from a shared base policy, so
+  #   an action added here without a predicate was reader-accessible by default - which is how the
+  #   reordering actions came to be reachable by a reader. It now answers every action it has with
+  #   a predicate and carries no map at all, so the next such action has no gate to fall back on
+  #   and has to be given one.
+  describe 'the permission map' do
+    it 'has no default' do
+      expect(described_class.action_permissions_map.default).to be_nil
+    end
+
+    it 'names no action' do
+      expect(described_class.action_permissions_map).to be_empty
     end
   end
 end

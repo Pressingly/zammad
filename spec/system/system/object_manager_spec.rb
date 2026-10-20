@@ -66,6 +66,15 @@ RSpec.describe 'System > Objects', type: :system do
       context "for data_type '#{data_type}'" do
         before do
           visit '/#system/object_manager'
+
+          # Executing the migrations announces the required restart via a
+          #   fire-and-forget Sessions.broadcast, which only reaches websocket
+          #   sessions registered at that moment.
+          #   Wait for the websocket connection before triggering migrations,
+          #   otherwise the maintenance event is lost for good and the
+          #   'Zammad requires a restart' modal never shows up.
+          ensure_websocket
+          wait_for_authenticated_session
         end
 
         it 'creates and removes the field correctly' do
@@ -84,7 +93,15 @@ RSpec.describe 'System > Objects', type: :system do
           expect(page).to have_text('Database Update Required')
           click '.js-execute', wait: 7.minutes
           expect(page).to have_text('Zammad requires a restart')
+
+          # refresh_with_wait only waits for the websocket connection, not for
+          #   the session to be marked as logged-in - the broadcast-driven
+          #   assertions below could still race the `login` event. Wait like
+          #   after the second reload, excluding the stale pre-reload session.
+          pre_reload_sessions = Sessions.sessions
           refresh_with_wait
+          wait_for_authenticated_session(except: pre_reload_sessions)
+          ensure_websocket_push_delivery
 
           # Update
           click 'tbody tr:last-child'
@@ -100,12 +117,19 @@ RSpec.describe 'System > Objects', type: :system do
           click '.js-execute', wait: 7.minutes
           expect(page).to have_text('please reload your browser')
 
+          # The reload replaces the websocket connection - remember the current
+          #   session ids, so the authenticated wait below cannot be satisfied by
+          #   the stale entry of the pre-reload websocket.
+          pre_reload_sessions = Sessions.sessions
+
           in_modal do
             click '.js-submit'
           end
 
           # After the reload, we must explictly wait for the app to be completely ready.
           wait_for_loading_to_complete(wait_ws: true)
+          wait_for_authenticated_session(except: pre_reload_sessions)
+          ensure_websocket_push_delivery
 
           # Delete
           click 'tbody tr:last-child .js-delete'
@@ -139,6 +163,11 @@ RSpec.describe 'System > Objects', type: :system do
       # Create the field via API.
       object_attribute
       visit '/#system/object_manager'
+
+      # Wait for the websocket connection, the maintenance events of the
+      #   migration execution below are lost otherwise.
+      ensure_websocket
+
       click 'tbody tr:last-child'
 
       in_modal do
@@ -163,7 +192,7 @@ RSpec.describe 'System > Objects', type: :system do
       end
 
       # Check that the options were correctly saved.
-      expect(ObjectManager::Attribute.last.data_option[:options][-2..]).to eq(
+      expect(object_attribute.reload.data_option[:options][-2..]).to eq(
         [
           {
             'name'  => 'new tree option 0',
@@ -328,6 +357,11 @@ RSpec.describe 'System > Objects', type: :system do
       # Make sure option is present in the first place.
       ticket = create(:ticket, group: Group.find_by(name: 'Users'), object_attribute.name => 'delete')
       visit "/#ticket/zoom/#{ticket.id}"
+
+      # Wait for the websocket connection, the maintenance events of the
+      #   migration execution below are lost otherwise.
+      ensure_websocket
+
       sorted_ticket_values = all("select[name=#{object_attribute.name}] option").map(&:value).reject { |x| x == '' }
       expect(sorted_ticket_values).to eq(options.keys)
       expect(find("select[name=#{object_attribute.name}] option:checked").value).to eq('delete')
@@ -400,6 +434,8 @@ RSpec.describe 'System > Objects', type: :system do
     before do
       visit '/#system/object_manager'
       page.find('.js-new').click
+
+      modal_ready
     end
 
     it 'verifies option creation order of new tree select options' do
@@ -430,11 +466,15 @@ RSpec.describe 'System > Objects', type: :system do
       # add numbers to all inputs to verify order in config later
       number = 1
       page.all('input.js-key').each do |input|
-        input.send_keys(number)
+        # #send_keys must receive a String: capybara-playwright-driver's key
+        # dispatcher (unlike Selenium's) silently drops non-String/Symbol/Array
+        # arguments instead of coercing them, so an Integer here is a no-op.
+        input.send_keys(number.to_s)
         number += 1
       end
 
       page.find('.js-submit').click
+      await_empty_ajax_queue
       expected_data_options = { 'options'    =>
                                                 [{ 'name'     => '1',
                                                    'value'    => '1',
@@ -454,7 +494,13 @@ RSpec.describe 'System > Objects', type: :system do
                                 'maxlength'  => 255,
                                 'translate'  => false }
 
-      expect(ObjectManager::Attribute.last.data_option).to eq(expected_data_options)
+      # This whole file performs many real schema migrations back-to-back (see the
+      #   add_column lines throughout), which can occasionally cause severe, if rare,
+      #   contention for an otherwise-synchronous, already-committed attribute save.
+      #   The file already has precedent for this class of slowness elsewhere
+      #   (migration-execution waits use up to 7.minutes).
+      wait(60).until { ObjectManager::Attribute.find_by(name: 'tree1')&.data_option == expected_data_options }
+      expect(ObjectManager::Attribute.find_by(name: 'tree1').data_option).to eq(expected_data_options)
     end
 
     it 'checks smart defaults for select field' do
@@ -474,7 +520,16 @@ RSpec.describe 'System > Objects', type: :system do
       end
 
       page.all('.js-value')[-2].set('special 2')
+
+      # The submit serialization relies on change events of the key fields renaming
+      #   the value fields. Wait for them to be processed before saving
+      expect(page).to have_field('name', with: 'select1')
+      expect(page).to have_field('data_option::options::0')
+        .and have_field('data_option::options::1')
+      expect(page).to have_field('data_option::options::2', with: 'special 2')
+
       page.find('.js-submit').click
+      await_empty_ajax_queue
 
       expected_data_options = {
         '0' => '0',
@@ -482,7 +537,8 @@ RSpec.describe 'System > Objects', type: :system do
         '2' => 'special 2',
       }
 
-      expect(ObjectManager::Attribute.last.data_option['options']).to eq(expected_data_options)
+      attribute = wait(60).until { ObjectManager::Attribute.find_by(name: 'select1') }
+      expect(attribute.data_option['options']).to eq(expected_data_options)
     end
 
     it 'checks smart defaults for multiselect field' do
@@ -502,7 +558,16 @@ RSpec.describe 'System > Objects', type: :system do
       end
 
       page.all('.js-value')[-2].set('special 2')
+
+      # The submit serialization relies on change events of the key fields renaming
+      #   the value fields. Wait for them to be processed before saving
+      expect(page).to have_field('name', with: 'multiselect1')
+      expect(page).to have_field('data_option::options::0')
+        .and have_field('data_option::options::1')
+      expect(page).to have_field('data_option::options::2', with: 'special 2')
+
       page.find('.js-submit').click
+      await_empty_ajax_queue
 
       expected_data_options = {
         '0' => '0',
@@ -510,7 +575,8 @@ RSpec.describe 'System > Objects', type: :system do
         '2' => 'special 2',
       }
 
-      expect(ObjectManager::Attribute.last.data_option['options']).to eq(expected_data_options)
+      attribute = wait(60).until { ObjectManager::Attribute.find_by(name: 'multiselect1') }
+      expect(attribute.data_option['options']).to eq(expected_data_options)
     end
 
     it 'checks smart defaults for boolean field' do
@@ -520,22 +586,26 @@ RSpec.describe 'System > Objects', type: :system do
       page.find('select[name=data_type]').select('Boolean field')
       page.find('.js-valueFalse').set('HELL NOO')
       page.find('.js-submit').click
+      await_empty_ajax_queue
 
       expected_data_options = {
         true  => 'yes',
         false => 'HELL NOO',
       }
 
-      expect(ObjectManager::Attribute.last.data_option['options']).to eq(expected_data_options)
+      wait(60).until { ObjectManager::Attribute.find_by(name: 'bool1')&.data_option&.dig('options') == expected_data_options }
+      expect(ObjectManager::Attribute.find_by(name: 'bool1').data_option['options']).to eq(expected_data_options)
     end
 
     it 'checks default boolean value visibility' do
-      fill_in 'Name', with: 'bool1'
-      find('input[name=display]').set('Bool 1')
+      in_modal do
+        fill_in 'Name', with: 'bool1'
+        find('input[name=display]').set('Bool 1')
 
-      page.find('select[name=data_type]').select('Boolean field')
-      choose('data_option::default', option: 'true')
-      page.find('.js-submit').click
+        page.find('select[name=data_type]').select('Boolean field')
+        choose('data_option::default', option: 'true')
+        page.find('.js-submit').click
+      end
 
       td = page.find(:css, 'td', text: 'bool1')
       tr = td.find(:xpath, './parent::tr')
@@ -799,8 +869,8 @@ RSpec.describe 'System > Objects', type: :system do
     let(:link_prefix) { "#{Setting.get('http_type')}://#{Setting.get('fqdn')}/#user/profile/" }
 
     before do
-      users
-      searchindex_model_reload([User])
+      users.each(&:search_index_update_backend)
+      SearchIndexBackend.refresh
     end
 
     shared_examples 'showing preview table below data options' do
@@ -821,6 +891,9 @@ RSpec.describe 'System > Objects', type: :system do
       before do
         visit '/#system/object_manager'
         page.find('.js-new').click
+
+        modal_ready
+
         fill_in 'Name', with: 'test_json'
         set_select_field_label('data_type', 'External data source field')
         fill_in 'Search URL', with: "#{Setting.get('es_url')}/#{Setting.get('es_index')}_test_user/_search?q=\#{search.term}"
@@ -861,6 +934,7 @@ RSpec.describe 'System > Objects', type: :system do
         attribute
         visit '/#system/object_manager'
         click "tr[data-id='#{attribute.id}']"
+        modal_ready
       end
 
       it_behaves_like 'showing preview table below data options'

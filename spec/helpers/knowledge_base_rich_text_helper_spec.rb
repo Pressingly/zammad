@@ -3,22 +3,47 @@
 require 'rails_helper'
 
 RSpec.describe KnowledgeBaseRichTextHelper, type: :helper do
-  describe '#prepare_rich_text_videos' do
-    it 'renders a YouTube marker' do
-      marker = '( widget: video, provider: youtube, id: aaa )'
-      expect(helper.prepare_rich_text_videos(marker))
-        .to include("src='https://www.youtube.com/embed/aaa'")
+  # The rewriting itself lives in KnowledgeBaseRichText (see its spec); what this module adds is
+  #   the link target of the public help pages, which needs the route helpers and `request`.
+  describe '#prepare_rich_text_links' do
+    include_context 'basic Knowledge Base'
+
+    let(:linked_answer) { create(:knowledge_base_answer, :published, category: category) }
+    let(:translation)   { linked_answer.translation_primary }
+
+    it 'resolves an answer link to its public help path' do
+      input = "<a data-target-type='knowledge-base-answer' data-target-id='#{translation.id}'>See also</a>"
+
+      expect(helper.prepare_rich_text_links(input))
+        .to include(%(href="/help/#{locale_name}/#{category.translation_primary.to_param}/#{translation.to_param}"))
     end
 
-    it 'renders a Vimeo marker' do
-      marker = '( widget: video, provider: vimeo, id: 111 )'
+    it 'resolves a link to a removed answer to a placeholder' do
+      input = "<a data-target-type='knowledge-base-answer' data-target-id='9999'>See also</a>"
+
+      expect(helper.prepare_rich_text_links(input)).to include('href="#"')
+    end
+  end
+
+  describe '#prepare_rich_text_videos' do
+    it 'renders a legacy (host-less) YouTube marker for backward compatibility' do
+      result = helper.prepare_rich_text_videos('( widget: video, provider: youtube, id: vTTzwJsHpU8 )')
+      expect(result).to include("src='https://www.youtube.com/embed/vTTzwJsHpU8'")
+    end
+
+    it 'renders a PeerTube marker' do
+      allow(Setting).to receive(:get).with('kb_self_hosted_video_servers')
+        .and_return([{ 'host' => 'video.example.com', 'name' => 'PT' }])
+
+      marker = '( widget: video, provider: peertube, host: video.example.com, id: uuid-1 )'
       expect(helper.prepare_rich_text_videos(marker))
-        .to include("src='https://player.vimeo.com/video/111'")
+        .to include("src='https://video.example.com/videos/embed/uuid-1'")
     end
 
     it 'renders multiple markers in the same input' do
-      input = '( widget: video, provider: youtube, id: aaa ) and ( widget: video, provider: vimeo, id: 111 )'
-      expect(helper.prepare_rich_text_videos(input))
+      input  = 'a ( widget: video, provider: youtube, id: aaa ) b ( widget: video, provider: vimeo, id: 111 ) c'
+      result = helper.prepare_rich_text_videos(input)
+      expect(result)
         .to include("src='https://www.youtube.com/embed/aaa'")
         .and include("src='https://player.vimeo.com/video/111'")
     end
@@ -31,14 +56,9 @@ RSpec.describe KnowledgeBaseRichTextHelper, type: :helper do
         .and satisfy { |r| r.exclude?("id='youtubea' srcdoc=") }
     end
 
-    it 'leaves the marker untouched for an unrecognized provider' do
+    it 'renders nothing for an unrecognized provider' do
       marker = '( widget: video, provider: dailymotion, id: x )'
-      expect(helper.prepare_rich_text_videos(marker)).to eq(marker)
-    end
-
-    it 'does not raise when a value contains a colon' do
-      marker = '( widget: video, provider: youtube, id: aa:bb )'
-      expect { helper.prepare_rich_text_videos(marker) }.not_to raise_error
+      expect(helper.prepare_rich_text_videos(marker)).to eq('')
     end
   end
 end

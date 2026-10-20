@@ -48,6 +48,9 @@ class App.User extends App.Model
 
   initials: ->
     if @firstname && @lastname && @firstname[0] && @lastname[0]
+      format = App.Config.get('user_name_format')
+      if format && format != 'first_last'
+        return @lastname[0] + @firstname[0]
       return @firstname[0] + @lastname[0]
 
     if @firstname && @firstname[0] && !@lastname
@@ -386,7 +389,7 @@ class App.User extends App.Model
     # forbid non-agents to change users
     return false if !requester.permission('ticket.agent')
     # allow agents to change customers only
-    return false if @permission(['admin.user', 'ticket.agent'])
+    return false if @permission(['admin.*', 'ticket.agent'])
     @permission('ticket.customer')
 
   isDeleteableBy: (requester) ->
@@ -453,69 +456,68 @@ class App.User extends App.Model
   @current: App.Session.get
 
   displayName: ->
-    if !_.isEmpty(@firstname)
-      name = @firstname
-    if !_.isEmpty(@lastname)
-      if _.isEmpty(name)
-        name = ''
-      else
-        name = name + ' '
-      name = name + @lastname
-    return name if !_.isEmpty(name)
-    if @email
-      return @email
-    if @phone
-      return @phone
-    if @mobile
-      return @mobile
-    if @login
-      return @login
-    return '-'
+    @displayNameFromParts() or @displayNameFallback()
 
   displayNameLong: ->
-    if !_.isEmpty(@firstname)
-      name = @firstname
-    if !_.isEmpty(@lastname)
-      if _.isEmpty(name)
-        name = ''
-      else
-        name = name + ' '
-      name = name + @lastname
-    if !_.isEmpty(name)
+    name = @displayNameFromParts()
+    if name
       if !_.isEmpty(@organization)
-        if typeof @organization is 'object'
-          name = "#{name} (#{@organization.name})"
-        else
-          name = "#{name} (#{@organization})"
-      else if !_.isEmpty(@department)
-        name = "#{name} (#{@department})"
-    return name if !_.isEmpty(name)
-    if @email
-      return @email
-    if @phone
-      return @phone
-    if @mobile
-      return @mobile
-    if @login
-      return @login
-    return '-'
+        org =
+          if typeof @organization is 'object'
+            @organization.name
+          else
+            @organization
+        org = org?.toString().trim()
+        name = "#{name} (#{org})" if org
+      else if @department
+        department = @department?.toString().trim()
+        name = "#{name} (#{department})" if department
+      return name
+    @displayNameFallback()
 
-  recipientName: (ticket, withEmail = false) ->
-    format        = App.Config.get('ticket_define_email_from')
-    group         = App.Group.find(ticket.group_id)
-    email_address = App.EmailAddress.find(group.email_address_id)
+  displayNameFromParts: ->
+    format = App.Config.get('user_name_format') or 'first_last'
+    [parts, separator] =
+      switch format
+        when 'last_first'
+          [[@lastname, @firstname], ' ']
+        when 'last_first_comma'
+          [[@lastname, @firstname], ', ']
+        else
+          [[@firstname, @lastname], ' ']
+    cleaned = _.map(parts, (part) -> part?.toString().trim())
+    _.compact(cleaned).join(separator)
+
+  displayNameFallback: ->
+    return @email  if @email
+    return @phone  if @phone
+    return @mobile if @mobile
+    return @login  if @login
+    '-'
+
+  recipientName: (ticket, withEmail = false, email_address = null) ->
+    format = App.Config.get('ticket_define_email_from')
+    if !email_address
+      group         = App.Group.find(ticket.group_id)
+      email_address = App.EmailAddress.find(group.email_address_id)
     return if !email_address
 
     separator = App.Config.get('ticket_define_email_from_separator')
+    # Build the name nil-safe from the parts - string interpolation would render
+    #   NULL name parts as the literal 'null'.
+    user_name = _.compact([@firstname, @lastname].map((part) -> part?.toString().trim())).join(' ')
     if (@id is 1 || format is 'SystemAddressName') && @permission('ticket.agent')
       result = email_address.name
       result = App.Utils.buildEmailAddress(result, email_address.email) if withEmail
       return result
     else if format is 'AgentNameSystemAddressName' && @permission('ticket.agent')
-      result = "#{@firstname} #{@lastname} #{separator} #{email_address.name}"
+      result = if user_name then "#{user_name} #{separator} #{email_address.name}" else email_address.name
       result = App.Utils.buildEmailAddress(result, email_address.email) if withEmail
       return result
     else
-      result = "#{@firstname} #{@lastname}" # AgentName or customer
-      result = App.Utils.buildEmailAddress(result, @email) if withEmail
+      result = user_name # AgentName or customer
+      result or= email_address.name if @permission('ticket.agent')
+      if withEmail
+        address = if @permission('ticket.agent') then email_address.email else @email
+        result  = App.Utils.buildEmailAddress(result, address)
       return result

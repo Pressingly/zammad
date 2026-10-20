@@ -4,8 +4,6 @@
 import { watchIgnorable } from '@vueuse/shared'
 import { computed, ref, toRef } from 'vue'
 
-import type { CommonInputSearchExpose } from '#shared/components/CommonInputSearch/CommonInputSearch.vue'
-import CommonInputSearch from '#shared/components/CommonInputSearch/CommonInputSearch.vue'
 import {
   NotificationTypes,
   useNotifications,
@@ -18,6 +16,8 @@ import { QueryHandler } from '#shared/server/apollo/handler/index.ts'
 import stopEvent from '#shared/utils/events.ts'
 
 import CommonDialog from '#mobile/components/CommonDialog/CommonDialog.vue'
+import CommonInputSearch from '#mobile/components/CommonInputSearch/CommonInputSearch.vue'
+import type { CommonInputSearchExpose } from '#mobile/components/CommonInputSearch/CommonInputSearch.vue'
 
 interface Props {
   name: string
@@ -152,7 +152,7 @@ const processSearchKeydown = (event: KeyboardEvent) => {
           <button
             v-if="filter.length > 0"
             :aria-label="$t('Create tag')"
-            class="bg-green rounded-3xl text-white"
+            class="rounded-3xl bg-green text-white"
             :class="{
               'bg-green/40 text-white/20': tagExists(filter),
             }"
@@ -176,7 +176,7 @@ const processSearchKeydown = (event: KeyboardEvent) => {
         v-for="option of filteredTags"
         :id="`${name}-${option}`"
         :key="option"
-        class="focus:bg-blue-highlight flex w-full items-center px-4 focus:outline-hidden"
+        class="flex w-full items-center px-4 focus:bg-blue-highlight focus:outline-hidden"
         role="option"
         aria-setsize="-1"
         :aria-posinset="sortedOptions.indexOf(option) + 1"

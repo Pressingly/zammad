@@ -20,8 +20,25 @@ class KnowledgeBase::Answer::Translation < ApplicationModel
   belongs_to                    :content, class_name: 'KnowledgeBase::Answer::Translation::Content', inverse_of: :translation, dependent: :destroy
   accepts_nested_attributes_for :content, update_only: true
 
+  # Embedding cache rows are cleaned up with the record they belong to.
+  has_many :ai_stored_results, class_name: 'AI::StoredResult', as: :related_object, dependent: :destroy
+
   validates :title,        presence: true, length: { maximum: 250 }
   validates :kb_locale_id, uniqueness: { case_sensitive: true, scope: :answer_id }
+
+  before_save :set_edited_at, if: :edited?
+
+  # A category is dated by the content below it, so an edit of this translation is an edit of its
+  #   answer's category and of every category above that one.
+  #
+  # `saved_change_to_edited_at?` *is* the editorial contract: the column moves for a title change
+  #   (in `before_save` above), for a body change (through
+  #   KnowledgeBase::Answer::Translation::Content#bump_translation_edited_at, which saves rather
+  #   than touches), and on creation. Everything else that reaches this row does so through `touch`
+  #   — KnowledgeBase::Answer#touch_translations and the non-body branch of that same content hook —
+  #   which runs no callbacks, so tags, attachments and publication changes stay out by
+  #   construction.
+  after_save :bump_category_edited_at, if: :saved_change_to_edited_at?
 
   scope :neighbours_of, ->(translation) { joins(:answer).where(knowledge_base_answers: { category_id: translation.answer&.category_id }) }
 
@@ -39,36 +56,84 @@ class KnowledgeBase::Answer::Translation < ApplicationModel
     [answer_id, title.parameterize].join('-')
   end
 
+  # Where this translation is read in the desktop app. Composed by hand because the app is a SPA:
+  #   Rails only serves it via the `/desktop/*path` catch-all, so there is no route helper for the
+  #   individual page. Keep in sync with the `KnowledgeBaseAnswer` route in
+  #   app/frontend/apps/desktop/pages/knowledge-base/routes.ts.
+  def desktop_url
+    "/desktop/knowledge-base/locale/#{kb_locale.system_locale.locale}/answer/#{answer_id}"
+  end
+
   def search_index_attribute_lookup(include_references: true)
     attrs = super
 
-    attrs['title']      = ActionController::Base.helpers.strip_tags(title)
-    attrs['content']    = content&.search_index_attribute_lookup
-    attrs['scope_id']   = answer.category_id
-    attrs['tags']       = answer.tag_list
-    attrs['attachment'] = answer.search_index_attachments_lookup(attrs.to_json.bytesize)
+    attrs['title']             = ActionController::Base.helpers.strip_tags(title)
+    attrs['content']           = content&.search_index_attribute_lookup
+    attrs['scope_id']          = answer.category_id
+    attrs['tags']              = answer.tag_list
+    attrs['attachment']        = answer.search_index_attachments_lookup(attrs.to_json.bytesize)
+
+    # Index the answer's publication state for the `publication_state:`
+    # search syntax.
+    attrs['publication_state'] = answer_publication_state
 
     attrs
   end
 
+  scope :vector_index_scope, lambda {
+    # Index every answer regardless of its publication state (drafts and archived ones included) —
+    # whether a user may receive it as a suggestion is decided by the search, which filters by
+    # permission and by publication state (Service::KnowledgeBase::Answer::SimilaritySearch).
+    #
+    # Every category is indexed unless it (or one of its ancestors) is excluded. The bulk counterpart
+    # to #vector_indexing_for_record?: one expanded id list filters the whole reload, rather than
+    # being asked about one answer at a time.
+    answer_scope = KnowledgeBase::Answer.in_vector_indexable_category
+
+    joins(:answer).merge(answer_scope).includes(:content, :kb_locale)
+  }
+
   def vector_index_data
     {
-      content:  "#{title}\n#{content.body.html2text}",
-      metadata: {
-        locale:      kb_locale.system_locale.locale,
-        category_id: answer.category_id,
+      content:              ::Text::ContentCleanup.new(content: content.body).cleanup,
+      content_meta_headers: [title],
+      metadata:             {
+        answer_id:          answer_id,
+        locale:             kb_locale.system_locale.locale,
+        category_id:        answer.category_id,
+        visible_internally: answer.visible_internally?,
       },
     }
   end
 
   def vector_indexing_for_record?
-    return false if !answer.visible_internally?
+    # Index answers of any publication state (drafts and archived ones included, so the
+    # visible_internally? guard is omitted); the search decides who may receive them as a suggestion,
+    # and in which publication states.
+    #
+    # Every category is indexed unless it (or one of its ancestors) is explicitly excluded. Passing
+    # the id spares this check from loading the category record just to look it up in the list.
+    KnowledgeBase::Category.vector_indexable?(answer.category_id)
+  end
 
-    # For now only explicitly enabled categories or all are indexed.
-    relevant_categorie_ids = ENV.fetch('VECTOR_INDEX_FOR_KNOWLEDGE_BASE_CATEGORY_IDS', nil)
-    return false if relevant_categorie_ids&.split(',')&.exclude?(answer.category_id.to_s)
+  def vector_index_chunking_strategy
+    Setting.get('vectordb_knowledge_base_chunking_strategy')&.to_sym
+  end
 
-    true
+  # Answer attributes that feed this translation's vector document: category (indexing scope +
+  # metadata) and the state timestamps (drive the visible_internally metadata).
+  VECTOR_INDEX_ANSWER_ATTRIBUTES = %w[category_id internal_at published_at archived_at].freeze
+
+  # Did anything feeding the vector document change? Title/locale live here, the body on the content
+  # record, the rest on the answer — each is read off its own record's previous_changes, right after
+  # the write that set them (HasVectorIndex#vector_index_update_on_change). previous_changes can be
+  # stale on long-lived instances, which errs towards an extra (no-op) reindex, never a skip of a
+  # real change.
+  def vector_index_relevant_change?
+    return true if previous_changes.keys.intersect?(%w[title kb_locale_id])
+    return true if content&.previous_changes&.key?('body')
+
+    answer&.previous_changes&.keys&.intersect?(VECTOR_INDEX_ANSWER_ATTRIBUTES) || false
   end
 
   def inline_linked_objects
@@ -104,4 +169,24 @@ class KnowledgeBase::Answer::Translation < ApplicationModel
         .where(knowledge_base_answers: { category_id: scope })
     end
   }
+
+  private
+
+  def edited?
+    return true if new_record?
+
+    title_changed?
+  end
+
+  def set_edited_at
+    self.edited_at = Time.zone.now
+  end
+
+  def bump_category_edited_at
+    ::KnowledgeBase::Category::Translation.bump_edited_at(answer&.category, [kb_locale_id])
+  end
+
+  def answer_publication_state
+    answer.can_be_published_aasm.calculated_state
+  end
 end

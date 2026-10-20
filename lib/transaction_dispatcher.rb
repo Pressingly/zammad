@@ -6,7 +6,16 @@ class TransactionDispatcher
     EventBuffer.reset('transaction')
   end
 
+  # Request-scoped default options (e.g. disable_notification from the
+  # X-Zammad-Suppress-Notifications header), merged into every commit on this
+  # thread. Without this, a nested Transaction.execute inside a controller or
+  # service would drain the event buffer before the request-level dispatch
+  # in ApplicationController::HandlesTransitions can apply these options.
+  # Stored as a callable because it is registered before authentication ran.
+  thread_cattr_accessor :request_options
+
   def self.commit(params = {})
+    params = (request_options&.call || {}).merge(params)
 
     # add attribute of interface handle (e. g. to send (no) notifications if a agent
     # is creating a ticket via application_server, but send it if it's created via
@@ -34,7 +43,10 @@ class TransactionDispatcher
       backend = Setting.get(setting.name)
       next if params[:disable]&.include?(backend)
 
-      sync_backends.push backend.constantize
+      backend_class = resolve_backend(backend)
+      next if backend_class.nil?
+
+      sync_backends.push backend_class
     end
 
     # get uniq objects
@@ -57,13 +69,33 @@ class TransactionDispatcher
 
   def self.execute_single_backend(backend, item, params)
     Rails.logger.debug { "Execute single backend #{backend}" }
+
+    # The context is intentionally not restored afterwards: a lot of code writes records on
+    #   behalf of other users and relies on a blank UserInfo to keep the ownership it assigns
+    #   explicitly (see ApplicationModel::ChecksUserColumnsFillup). Endpoints that render
+    #   assets after dispatch re-establish the context themselves.
     begin
-      UserInfo.current_user_id = nil
+      UserInfo.reset
       integration = backend.new(item, params)
       integration.perform
     rescue => e
       Rails.logger.error e
     end
+  end
+
+  # Resolve a configured transaction backend to its class. A backend can be
+  #   registered as a Setting but be missing from the code — e.g. after an addon
+  #   is removed, a downgrade, or divergent branches sharing a database. Skip it
+  #   with a loud log rather than letting a single stale entry take down every
+  #   request/job that dispatches transactions.
+  def self.resolve_backend(backend)
+    backend_class = backend.safe_constantize
+
+    if backend_class.nil?
+      Rails.logger.error "Transaction backend '#{backend}' is configured but not defined; skipping it."
+    end
+
+    backend_class
   end
 
 =begin

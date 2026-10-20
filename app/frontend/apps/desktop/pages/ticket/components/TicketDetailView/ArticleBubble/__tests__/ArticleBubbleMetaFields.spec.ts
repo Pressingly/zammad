@@ -1,0 +1,182 @@
+// Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
+
+import { waitFor } from '@testing-library/vue'
+import { expect } from 'vitest'
+
+import { type ExtendedRenderResult, renderComponent } from '#tests/support/components/index.ts'
+import { mockApplicationConfig } from '#tests/support/mock-applicationConfig.ts'
+
+import { type createDummyArticle } from '#shared/entities/ticket-article/__tests__/mocks/ticket-articles.ts'
+
+import iconAliasMapRaw from '#desktop/initializer/desktopIconsAliasesMap.ts'
+import { mockDetailViewSetup } from '#desktop/pages/ticket/components/TicketDetailView/__tests__/support/article-detail-view-mocks.ts'
+import { modules as articleTypeModules } from '#desktop/pages/ticket/components/TicketDetailView/article-type/index.ts'
+import type { ArticleTypeName } from '#desktop/pages/ticket/components/TicketDetailView/article-type/types.ts'
+import ArticleBubbleMetaFields from '#desktop/pages/ticket/components/TicketDetailView/ArticleBubble/ArticleBubbleMetaFields.vue'
+
+const hasBaseInformation = (wrapper: ExtendedRenderResult) => {
+  expect(wrapper.getByText('Created at')).toBeInTheDocument()
+  expect(wrapper.getByText('2011-12-11 11:11')).toBeInTheDocument()
+
+  expect(wrapper.getByText('From')).toBeInTheDocument()
+  expect(wrapper.getByText('Nicole Braun')).toBeInTheDocument()
+  expect(wrapper.getByText(/nicole.braun@zammad.org/i)).toBeInTheDocument()
+}
+
+const hasAdditionalFields = (wrapper: ExtendedRenderResult, field: ArticleTypeName) => {
+  if (field === 'email') {
+    expect(wrapper.getByText('Subject')).toBeInTheDocument()
+    expect(wrapper.getByText('Test subject')).toBeInTheDocument()
+    expect(wrapper.getByText('To')).toBeInTheDocument()
+    expect(wrapper.getByText('Test Agents')).toBeInTheDocument()
+  }
+}
+
+const renderWrapper = (
+  articleType: ArticleTypeName,
+  options?: { articleData?: Parameters<typeof createDummyArticle>[0] },
+) => {
+  return renderComponent(
+    {
+      setup() {
+        const { article } = mockDetailViewSetup({
+          article: {
+            articleType,
+            ...options?.articleData,
+          },
+        })
+        return { article }
+      },
+      components: { ArticleBubbleMetaFields },
+      template: `<div><ArticleBubbleMetaFields :article="article" /></div>>`,
+    },
+    { router: true },
+  )
+}
+
+const iconAliasMap: Record<string, string> = iconAliasMapRaw
+
+describe('ArticleBubbleMetaFields', () => {
+  it.each(articleTypeModules)(
+    'displays meta field for channel $name',
+    ({ name, metaLabel, icon }) => {
+      const wrapper = renderWrapper(name as ArticleTypeName, {
+        articleData: {
+          subject: 'Test subject',
+          to: {
+            raw: 'Test Agents',
+            parsed: [
+              { name: 'Test Agents', emailAddress: 'tet@agents.com', isSystemAddress: false },
+            ],
+          },
+        },
+      })
+
+      hasBaseInformation(wrapper)
+
+      expect(wrapper.getByText('Channel')).toBeInTheDocument()
+      expect(wrapper.getByText(metaLabel)).toBeInTheDocument()
+      expect(wrapper.getByIconName(iconAliasMap[icon] || icon)).toBeInTheDocument()
+
+      hasAdditionalFields(wrapper, name as ArticleTypeName)
+    },
+  )
+
+  describe('hidden features', () => {
+    it('displays links on channel field if available', () => {
+      const wrapper = renderWrapper('web', {
+        articleData: {
+          preferences: {
+            links: [
+              {
+                label: 'Zammad',
+                api: true,
+                url: '/zammad.org',
+                target: '_blank',
+              },
+              {
+                label: 'Vue',
+                api: true,
+                url: '/vuejs.org/',
+                target: '_blank',
+              },
+            ],
+          },
+        },
+      })
+
+      expect(wrapper.getByRole('link', { name: 'Zammad' })).toBeInTheDocument()
+      expect(wrapper.getByRole('link', { name: 'Vue' })).toBeInTheDocument()
+
+      expect(wrapper.getByRole('link', { name: 'Zammad' })).toHaveAttribute(
+        'href',
+        '/api/zammad.org',
+      )
+      expect(wrapper.getByRole('link', { name: 'Vue' })).toHaveAttribute('href', '/api/vuejs.org/')
+    })
+
+    it('displays detected language name if available', async () => {
+      const wrapper = renderWrapper('web', {
+        articleData: {
+          detectedLanguage: 'de',
+        },
+      })
+
+      expect(wrapper.getByText('Detected language')).toBeInTheDocument()
+
+      await waitFor(() => {
+        expect(wrapper.getByText('German')).toBeInTheDocument()
+      })
+    })
+
+    it('displays the accounted time and its activity type in one line if available', () => {
+      mockApplicationConfig({ time_accounting_unit: 'minute', time_accounting_types: true })
+
+      const wrapper = renderWrapper('web', {
+        articleData: {
+          timeUnit: 5,
+          accountedTimeType: 'Billing',
+        },
+      })
+
+      expect(wrapper.getByText('Accounted time')).toBeInTheDocument()
+      expect(wrapper.getByText('5.00 minute(s)')).toBeInTheDocument()
+
+      // The activity type is the marked up part of the translated label.
+      const activityType = wrapper.getByText(/for activity type/)
+
+      expect(activityType).toHaveTextContent('for activity type Billing')
+      expect(activityType.querySelector('b')).toHaveTextContent('Billing')
+    })
+
+    it('does not display the activity type if the feature is disabled', () => {
+      mockApplicationConfig({ time_accounting_unit: 'minute', time_accounting_types: false })
+
+      const wrapper = renderWrapper('web', {
+        articleData: {
+          timeUnit: 5,
+          accountedTimeType: 'Billing',
+        },
+      })
+
+      expect(wrapper.getByText('5.00 minute(s)')).toBeInTheDocument()
+
+      expect(wrapper.queryByText('for activity type')).not.toBeInTheDocument()
+      expect(wrapper.queryByText('Billing')).not.toBeInTheDocument()
+    })
+
+    it('does not display the activity type if there is none', () => {
+      mockApplicationConfig({ time_accounting_unit: 'minute', time_accounting_types: true })
+
+      const wrapper = renderWrapper('web', {
+        articleData: {
+          timeUnit: 5,
+        },
+      })
+
+      expect(wrapper.getByText('5.00 minute(s)')).toBeInTheDocument()
+
+      expect(wrapper.queryByText('for activity type')).not.toBeInTheDocument()
+    })
+  })
+})

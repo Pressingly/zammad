@@ -3,6 +3,7 @@
 Signature.create_if_not_exists(
   id:            1,
   name:          __('default'),
+  # rubocop:disable-next Lint/InterpolationCheck
   body:          '
   #{user.firstname} #{user.lastname}
 

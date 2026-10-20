@@ -106,7 +106,7 @@ onMounted(() => {
 
 <template>
   <article
-    class="Content relative overflow-hidden p-3 transition-[padding]"
+    class="Content relative overflow-hidden p-3 pb-4 transition-[padding] print:pt-3!"
     :class="[
       bodyClasses,
       {
@@ -117,7 +117,7 @@ onMounted(() => {
   >
     <div
       v-if="showAuthorInformation"
-      class="absolute top-3 flex w-full px-3 ltr:left-0 rtl:right-0"
+      class="absolute top-3 flex w-full px-3 ltr:left-0 rtl:right-0 print:hidden"
       aria-describedby="author-name-and-creation-date"
     >
       <p id="author-name-and-creation-date" class="sr-only">
@@ -137,7 +137,7 @@ onMounted(() => {
     <div
       ref="bubbleElement"
       data-test-id="article-content"
-      class="overflow-hidden text-sm transition-[height] duration-200"
+      class="overflow-hidden text-sm transition-[height] duration-200 print:h-auto! print:overflow-visible"
     >
       <!--    Never drop this inner-article-body class used for Highlight feature-->
       <!--    eslint-disable vue/no-v-html-->
@@ -149,14 +149,14 @@ onMounted(() => {
     </div>
     <div
       v-if="hasShowMore"
-      class="relative"
+      class="relative print:hidden"
       :class="{
-        BubbleGradient: hasShowMore && !shownMore,
+        BubbleGradient: !shownMore,
       }"
     />
     <CommonLink
       v-if="hasShowMore"
-      class="mb-1 inline-block! outline-transparent! hover:underline! focus-visible:outline-blue-800!"
+      class="mb-1 inline-block! outline-transparent! hover:underline! focus-visible:outline-blue-800! print:hidden!"
       role="button"
       link="#"
       size="medium"
@@ -188,39 +188,26 @@ onMounted(() => {
   }
 
   /*
-    Strip inline color styles in dark mode.
-      However, we need to keep the colors of the Zammad palette.
+    `overflow-wrap: anywhere` above lets long unbroken text (e.g. URLs)
+    break instead of stretching the bubble. But that also lets table
+    columns collapse toward zero width, since the browser's table layout
+    treats a breakable word as having almost no minimum width. This starves
+    narrow columns in favor of wide ones instead of letting the table
+    overflow and scroll (via `overflow-x: auto` above) at a readable width.
+    Reset to `normal` scoped to tables so columns keep their natural width.
   */
-  [data-theme='dark'] &:deep(*[style*='color']):not(
-    [style*='color:rgb(102, 102, 102)'], [style*='color: rgb(102, 102, 102)'], /* neutral 1 */
-    [style*='color:rgb(153, 153, 153)'], [style*='color: rgb(153, 153, 153)'], /* neutral 2 */
-    [style*='color:rgb(204, 204, 204)'], [style*='color: rgb(204, 204, 204)'], /* neutral 3 */
+  &:deep(table) {
+    overflow-wrap: normal;
+  }
 
-    [style*='color:rgb(239, 68, 68)'], [style*='color: rgb(239, 68, 68)'], /* red 1 */
-    [style*='color:rgb(205, 121, 45)'], [style*='color: rgb(205, 121, 45)'], /* orange 1 */
-    [style*='color:rgb(80, 140, 70)'], [style*='color: rgb(80, 140, 70)'], /* green 1 */
-    [style*='color:rgb(48, 100, 172)'], [style*='color: rgb(48, 100, 172)'], /* blue 1 */
-    [style*='color:rgb(107, 41, 132)'], [style*='color: rgb(107, 41, 132)'], /* purple 1 */
-
-    [style*='color:rgb(235, 61, 79)'], [style*='color: rgb(235, 61, 79)'], /* red 2 */
-    [style*='color:rgb(233, 159, 59)'], [style*='color: rgb(233, 159, 59)'], /* orange 2 */
-    [style*='color:rgb(95, 159, 84)'], [style*='color: rgb(95, 159, 84)'], /* green 2 */
-    [style*='color:rgb(70, 147, 231)'], [style*='color: rgb(70, 147, 231)'], /* blue 2 */
-    [style*='color:rgb(153, 62, 195)'], [style*='color: rgb(153, 62, 195)'], /* purple 2 */
-
-    [style*='color:rgb(237, 97, 118)'], [style*='color: rgb(237, 97, 118)'], /* red 3 */
-    [style*='color:rgb(243, 193, 79)'], [style*='color: rgb(243, 193, 79)'], /* orange 3 */
-    [style*='color:rgb(127, 187, 118)'], [style*='color: rgb(127, 187, 118)'], /* green 3 */
-    [style*='color:rgb(91, 174, 243)'], [style*='color: rgb(91, 174, 243)'], /* blue 3 */
-    [style*='color:rgb(179, 91, 223)'], [style*='color: rgb(179, 91, 223)'], /* purple 3 */
-
-    [style*='color:rgb(241, 152, 167)'], [style*='color: rgb(241, 152, 167)'], /* red 4 */
-    [style*='color:rgb(246, 211, 102)'], [style*='color: rgb(246, 211, 102)'], /* orange 4 */
-    [style*='color:rgb(170, 214, 164)'], [style*='color: rgb(170, 214, 164)'], /* green 4 */
-    [style*='color:rgb(122, 202, 247)'], [style*='color: rgb(122, 202, 247)'], /* blue 4 */
-    [style*='color:rgb(201, 135, 236)'] [style*='color: rgb(201, 135, 236)'] /* purple 4 */
-  ) {
-    color: inherit !important;
+  /*
+    Strip inline background styles in dark mode (e.g. tables pasted from
+    external emails), so the bubble's own dark background shows through
+    instead of clashing with a light-mode background left over from the
+    original HTML.
+  */
+  [data-theme='dark'] &:deep(*[style*='background']) {
+    background: transparent !important;
   }
 }
 

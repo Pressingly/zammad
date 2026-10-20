@@ -4,6 +4,7 @@ class User < ApplicationModel
   include CanBeImported
   include HasActivityStreamLog
   include ChecksClientNotification
+  include CanSensitiveAssets
   include HasHistory
   include HasSearchIndexBackend
   include CanSelector
@@ -15,18 +16,23 @@ class User < ApplicationModel
   include HasTaskbars
   include HasTwoFactor
   include HasRecentCloses
+  include HasRecentViews
   include CanSelector
   include CanPerformChanges
   include User::Assets
   include User::Avatar
+  include User::HasAuditLogs
   include User::Search
   include User::SearchIndex
+  include User::TerminatesSessions
   include User::TouchesOrganization
   include User::TriggersSubscriptions
   include User::PerformsGeoLookup
   include User::UpdatesTicketOrganization
   include User::OutOfOffice
   include User::Permissions
+
+  SENSITIVE_FIELDS = %i[password].freeze
 
   has_and_belongs_to_many :organizations,          after_add: %i[cache_update create_organization_add_history], after_remove: %i[cache_update create_organization_remove_history], before_add: %i[check_organization_uniqueness], class_name: 'Organization'
   has_and_belongs_to_many :overviews,              dependent: :nullify
@@ -45,6 +51,7 @@ class User < ApplicationModel
   has_many                :overview_sortings,      dependent: :destroy
   has_many                :created_recent_views,   class_name: 'RecentView', foreign_key: :created_by_id, dependent: :destroy, inverse_of: :created_by
   has_many                :recent_closes,          dependent: :delete_all
+  has_many                :performed_audit_logs,   class_name: 'AuditLog', dependent: nil
   has_many                :data_privacy_tasks,     as: :deletable
   has_many                :ai_analytics_usages,    class_name: 'AI::Analytics::Usage', dependent: :destroy, inverse_of: :user
   belongs_to              :organization,           inverse_of: :members, optional: true
@@ -71,6 +78,7 @@ class User < ApplicationModel
 
   core_workflow_screens 'create', 'edit', 'invite_agent'
   core_workflow_admin_screens 'create', 'edit'
+  core_workflow_permission 'ticket.agent', 'admin.user'
 
   taskbar_entities 'UserProfile'
 
@@ -91,7 +99,8 @@ class User < ApplicationModel
                                  :overviews,
                                  :mentions,
                                  :recent_closes,
-                                 :ai_analytics_usages
+                                 :ai_analytics_usages,
+                                 :performed_audit_logs
 
   activity_stream_permission 'admin.user'
 
@@ -153,7 +162,10 @@ returns
 =end
 
   def fullname(email_fallback: true, recipient_line: false)
-    name = "#{firstname} #{lastname}".strip
+    # Email sending: always first name last name (regardless of setting)
+    format = recipient_line ? 'first_last' : Setting.get('user_name_format')
+
+    name = display_name_from_parts(format)
 
     if name.blank? && email.present? && email_fallback
       return email
@@ -174,6 +186,37 @@ returns
     end
 
     name
+  end
+
+=begin
+
+display name of user, built only from the name parts following the given
+format - without any fallback to personal data like email or phone. The
+server side twin of the frontend's displayNameFromParts().
+
+  user = User.find(123)
+  result = user.display_name_from_parts
+
+returns
+
+  result = "Bob Smith"
+
+=end
+
+  def display_name_from_parts(format = Setting.get('user_name_format'))
+    parts, separator = case format
+                       when 'last_first'
+                         [[lastname, firstname], ' ']
+                       when 'last_first_comma'
+                         [[lastname, firstname], ', ']
+                       else
+                         [[firstname, lastname], ' ']
+                       end
+
+    parts
+      .map { |part| part.to_s.strip }
+      .compact_blank
+      .join(separator)
   end
 
 =begin
@@ -344,6 +387,8 @@ returns
 
   # Find a user by mobile number, either directly or by number variants stored in the Cti::CallerIds.
   def self.by_mobile(number:)
+    return if number.blank?
+
     direct_lookup = User.where(mobile: number).reorder(:updated_at).first
     return direct_lookup if direct_lookup
 
@@ -628,6 +673,19 @@ returns
     user.fill_notification_config_preferences
 
     user.save!
+  end
+
+  # .reset_notifications_preferences! is also used to apply the admin defaults to all agents.
+  # This one also removes the group limit and sound settings, so the frontends use their defaults.
+  #
+  # @option user [User] to reset preferences
+  def self.reset_personal_notifications_preferences!(user)
+    return if !user.permissions? 'ticket.agent'
+
+    user.preferences[:notification_config]&.delete(:group_ids)
+    user.preferences.delete(:notification_sound)
+
+    reset_notifications_preferences!(user)
   end
 
 =begin
@@ -1069,6 +1127,9 @@ raise 'At least one user need to have admin permissions'
 
   def destroy_move_dependency_ownership
     result = Models.references(self.class.to_s, id)
+
+    # audit logs are kept untouched to preserve the history of deleted users
+    result.delete('AuditLog')
 
     user_columns = %w[created_by_id updated_by_id out_of_office_replacement_id origin_by_id owner_id archived_by_id published_by_id internal_by_id]
     result.each do |class_name, references|

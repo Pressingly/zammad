@@ -3,13 +3,22 @@
 class ApplicationJob < ActiveJob::Base
   include ApplicationJob::HasDelayedJobMonitoringCompatibilty
   include ApplicationJob::HasQueuingPriority
-  include ApplicationJob::HasCustomLogging
 
   discard_on HasActiveJobLock::LockKeyNotGeneratable
 
   queue_as :default
 
-  ActiveJob::LogSubscriber.detach_from :active_job
+  # Background work acts on behalf of the system, not of a user, and legitimately builds data
+  #   for other people - webhook payloads and CSV exports being the obvious ones. Without this
+  #   a job would inherit the unprivileged default for a blank user context and silently
+  #   receive redacted attributes. A job that does run as a user keeps that user.
+  around_perform do |_job, block|
+    if UserInfo.current_user_id.present?
+      block.call
+    else
+      UserInfo.with_system_context(&block)
+    end
+  end
 
   # See config/initializers/delayed_jobs_timeout_per_job.rb for details.
   def self.max_run_time

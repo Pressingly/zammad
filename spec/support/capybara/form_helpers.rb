@@ -228,7 +228,24 @@ class ZammadFormFieldCapybaraElementDelegator < SimpleDelegator
     # calculate before closing, since we cannot access it, if dialog is closed
     is_multi_select = multi_select?
 
-    select_option_by_label(label, **find_options)
+    begin
+      select_option_by_label(label, **find_options)
+    rescue Capybara::ElementNotFound, Selenium::WebDriver::Error::StaleElementReferenceError
+      # An asynchronous form re-render (e.g. the processing of a form updater response of a
+      #  previous field change) may close the dropdown again right after it was opened.
+      # In this case open the dropdown once again and retry.
+      # NOTE: only click if it is actually closed. The trigger's click handler toggles the
+      #  dropdown, and `select_menu_open?` briefly lags behind it (e.g. during the collapse
+      #  transition), so clicking while the dropdown still considers itself open would close
+      #  it instead of reopening it, and 'common-select.opened' would then never fire again.
+      if !select_menu_open?
+        element.click
+
+        wait_for_test_flag('common-select.opened')
+      end
+
+      select_option_by_label(label, **find_options)
+    end
 
     send_keys(:escape) if is_multi_select
 
@@ -303,8 +320,7 @@ class ZammadFormFieldCapybaraElementDelegator < SimpleDelegator
   def type_editor(text, click: true, skip_waiting: false, wait_for: nil)
     raise 'Field does not support typing' if !type_editor?
 
-    cursor_home_shortcut = mac_platform? ? %i[command up] : %i[control home]
-    input_element.click.send_keys(cursor_home_shortcut) if click
+    move_editor_caret_to_start if click
     input_element.send_keys(text)
 
     maybe_wait_for_form_updater if !skip_waiting
@@ -504,29 +520,41 @@ class ZammadFormFieldCapybaraElementDelegator < SimpleDelegator
     dialog_element
   end
 
+  # Checks if the menu of a select field is currently shown.
+  #   A short wait (instead of an instant snapshot) tolerates the brief window where a
+  #   collapse-enter transition has inserted the menu but not yet restored its real height,
+  #   during which it is present in the DOM but not yet considered visible.
+  def select_menu_open?
+    if desktop_view?
+      page.has_css?('#common-select > [role="menu"]', wait: 1)
+    else
+      page.has_css?('#common-select[role="dialog"]', wait: 1)
+    end
+  end
+
   # Dropdowns are teleported to the root element, so we must search them within the document body.
-  #   In order to improve the test performance, we don't do any implicit waits here.
-  #   Instead, we do explicit waits when opening/closing dropdowns within the actions.
+  #   A short explicit wait (instead of none) tolerates the same brief window as
+  #   `select_menu_open?`, while still failing fast if the dropdown genuinely never opens.
   def dropdown_element
     if type_select? || type_tags? || autocomplete?
-      page.find('#common-select > [role="menu"]', wait: false)
+      page.find('#common-select > [role="menu"]', wait: 1)
     elsif type_treeselect?
-      page.find('#field-tree-select-input-dropdown > [role="menu"]', wait: false)
+      page.find('#field-tree-select-input-dropdown > [role="menu"]', wait: 1)
     end
   end
 
   # Dialogs are teleported to the root element, so we must search them within the document body.
-  #   In order to improve the test performance, we don't do any implicit waits here.
-  #   Instead, we do explicit waits when opening/closing dialogs within the actions.
+  #   A short explicit wait (instead of none) tolerates the same brief window as
+  #   `select_menu_open?`, while still failing fast if the dialog genuinely never opens.
   def dialog_element
     if type_select?
-      page.find('#common-select[role="dialog"]', wait: false)
+      page.find('#common-select[role="dialog"]', wait: 1)
     elsif type_treeselect?
-      page.find("#dialog-field-tree-select-#{field_id}", wait: false)
+      page.find("#dialog-field-tree-select-#{field_id}", wait: 1)
     elsif type_tags?
-      page.find("#dialog-field-tags-#{field_id}", wait: false)
+      page.find("#dialog-field-tags-#{field_id}", wait: 1)
     elsif autocomplete?
-      page.find("#dialog-field-auto-complete-#{field_id}", wait: false)
+      page.find("#dialog-field-auto-complete-#{field_id}", wait: 1)
     end
   end
 
@@ -941,6 +969,44 @@ class ZammadFormFieldCapybaraElementDelegator < SimpleDelegator
 
   def triggers_form_updater?
     element['data-triggers-form-updater'] == 'true'
+  end
+
+  # Returns whether the caret is at the start of the editor, and moves it there if not.
+  EDITOR_CARET_TO_START_JS = <<~JS.freeze
+    ((el) => {
+      const { view, state: { selection, doc } } = el.editor;
+      const domSelection = document.getSelection();
+
+      let start = null;
+      doc.descendants((node, pos) => {
+        if (start !== null) return false;
+        if (node.isTextblock) {
+          start = pos + 1;
+          return false;
+        }
+      });
+
+      // The browser inserts typed text at its own caret, which the editor reads asynchronously.
+      const atStart = document.activeElement === el &&
+        selection.empty && selection.from === start &&
+        domSelection.isCollapsed && view.posAtDOM(domSelection.anchorNode, domSelection.anchorOffset) === start;
+
+      if (!atStart) el.editor.commands.focus('start');
+
+      return atStart;
+    })(this)
+  JS
+
+  # The click leaves the caret at the click position, e.g. inside a signature, and
+  #   go-to-start keys are unreliable: headless Chrome on macOS ignores them, and in
+  #   CI they sometimes had no effect. Place the caret via the editor instead, until
+  #   it stays there.
+  def move_editor_caret_to_start
+    input_element.click
+
+    wait.until { input_element.evaluate_script(EDITOR_CARET_TO_START_JS) }
+  rescue Selenium::WebDriver::Error::TimeoutError
+    raise 'The caret did not stay at the start of the editor'
   end
 
   def maybe_wait_for_form_updater

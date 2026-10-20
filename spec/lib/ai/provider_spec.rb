@@ -92,9 +92,190 @@ RSpec.describe AI::Provider do
     end
   end
 
+  describe '#embedding_input_limit' do
+    context 'when the embedding input limit option is present' do
+      subject(:ai_provider) do
+        described_class.new(
+          config: { provider: 'open_ai', token: '123', embedding_input_limit: 1024 },
+        )
+      end
+
+      it 'returns the configured input limit' do
+        expect(ai_provider.embedding_input_limit).to eq(1024)
+      end
+    end
+
+    # AI::ProviderConnection rejects both on save, but the config is jsonb and one written before
+    # that validation existed is still out there - as is a string, which the chunk budget cannot be
+    # compared against at all.
+    context 'when the configured input limit is unusable' do
+      def provider_with(limit)
+        AI::Provider::OpenAI.new(
+          config: { provider: 'open_ai', token: '123', embedding_model: 'text-embedding-3-small', embedding_input_limit: limit },
+        )
+      end
+
+      it 'ignores a negative limit' do
+        expect(provider_with(-1).embedding_input_limit).to eq(8191)
+      end
+
+      it 'ignores a zero limit' do
+        expect(provider_with(0).embedding_input_limit).to eq(8191)
+      end
+
+      it 'ignores a value that is no number at all' do
+        expect(provider_with('unlimited').embedding_input_limit).to eq(8191)
+      end
+
+      it 'reads a limit that arrived as a string' do
+        expect(provider_with('1024').embedding_input_limit).to eq(1024)
+      end
+    end
+
+    context 'when the embedding model has a known input limit' do
+      subject(:ai_provider) do
+        AI::Provider::OpenAI.new(
+          config: { provider: 'open_ai', token: '123', embedding_model: 'text-embedding-3-small' },
+        )
+      end
+
+      it 'returns the input limit of the embedding model' do
+        expect(ai_provider.embedding_input_limit).to eq(8191)
+      end
+    end
+
+    context 'when the embedding model has no known input limit' do
+      subject(:ai_provider) do
+        described_class.new(
+          config: { provider: 'open_ai', token: '123', embedding_model: 'unknown-embedding-model' },
+        )
+      end
+
+      it 'returns the default input limit' do
+        expect(ai_provider.embedding_input_limit).to eq(described_class::DEFAULT_EMBEDDING_INPUT_LIMIT)
+      end
+    end
+
+    # The model dropdown offers the id an endpoint reports, and Ollama reports name and tag. A
+    # verbatim lookup would miss and quietly size the chunks against the conservative default,
+    # feeding an 8192 token model in 512 token pieces.
+    context 'when the embedding model carries a tag' do
+      subject(:ai_provider) do
+        AI::Provider::Ollama.new(
+          config: { provider: 'ollama', url: 'http://localhost:11434', embedding_model: 'bge-m3:latest' },
+        )
+      end
+
+      it 'returns the input limit of the model behind the tag' do
+        expect(ai_provider.embedding_input_limit).to eq(8192)
+      end
+    end
+  end
+
+  describe '#embedding_size' do
+    def provider_with(config)
+      AI::Provider::OpenAI.new(config: { provider: 'open_ai', token: '123' }.merge(config))
+    end
+
+    it 'returns the configured dimensions' do
+      expect(provider_with(embedding_model: 'text-embedding-3-small', embedding_size: 512).embedding_size).to eq(512)
+    end
+
+    it 'falls back to what is known about the model' do
+      expect(provider_with(embedding_model: 'text-embedding-3-small').embedding_size).to eq(1536)
+    end
+
+    # The config is jsonb and keeps whatever an API update wrote into it, down to a string or a
+    # number that is no dimension at all - neither of which an index mapping can be built from.
+    it 'ignores a configured value that is no dimension' do
+      expect(provider_with(embedding_model: 'text-embedding-3-small', embedding_size: 0).embedding_size).to eq(1536)
+    end
+
+    it 'reads dimensions that arrived as a string' do
+      expect(provider_with(embedding_model: 'text-embedding-3-small', embedding_size: '512').embedding_size).to eq(512)
+    end
+
+    it 'is nothing for a model no source could size' do
+      expect(provider_with(embedding_model: 'unknown-embedding-model').embedding_size).to be_nil
+    end
+  end
+
+  describe '.known_embedding_default' do
+    it 'returns the value for a model that matches a key' do
+      expect(AI::Provider::Ollama.known_embedding_default(:EMBEDDING_SIZES, 'bge-m3')).to eq(1024)
+    end
+
+    # Ollama identifies a model by name and tag, while the tables are keyed by name alone.
+    it 'returns the value for a tagged model' do
+      expect(AI::Provider::Ollama.known_embedding_default(:EMBEDDING_SIZES, 'bge-m3:latest')).to eq(1024)
+    end
+
+    # The tables are shared across the providers: what a model is called does not depend on
+    # where it is served, so it resolves behind a custom OpenAI compatible endpoint just like
+    # behind Ollama.
+    it 'resolves the same value regardless of the provider' do
+      expect(AI::Provider::OpenAI.known_embedding_default(:EMBEDDING_SIZES, 'bge-m3')).to eq(1024)
+    end
+
+    it 'returns nil for a model the table does not know' do
+      expect(AI::Provider::Ollama.known_embedding_default(:EMBEDDING_SIZES, 'something-else')).to be_nil
+    end
+
+    it 'returns nil without a model', :aggregate_failures do
+      expect(AI::Provider::Ollama.known_embedding_default(:EMBEDDING_SIZES, nil)).to be_nil
+      expect(AI::Provider::Ollama.known_embedding_default(:EMBEDDING_SIZES, '')).to be_nil
+    end
+  end
+
   describe '.ping!' do
-    it 'raises an error' do
-      expect { described_class.ping!(nil) }.to raise_error(RuntimeError, 'not implemented')
+    # Providers that validate the config in check_temperature_support! do not implement it.
+    it 'does nothing by default' do
+      expect(described_class.ping!(nil)).to be_nil
+    end
+  end
+
+  # Saving a connection validates its config through one of these two methods: ping!, or
+  # check_temperature_support! for the providers that talk to the endpoint there anyway. A
+  # provider overriding neither would silently accept an unreachable endpoint or a bad token.
+  # That the implementation really issues a request is covered per provider in
+  # check_temperature_support_spec.rb and the 'provider/ping!' shared example.
+  describe 'config validation contract' do
+    let(:provider_files) { Rails.root.glob('lib/ai/provider/*.rb') }
+    let(:providers)      { provider_files.filter_map { |path| described_class.by_name(path.basename('.rb').to_s) } }
+
+    let(:validation_methods) { %i[ping! check_temperature_support!] }
+
+    it 'is fulfilled by every provider', :aggregate_failures do
+      # Every file has to resolve, otherwise a provider would be skipped instead of checked.
+      expect(providers.size).to eq(provider_files.size)
+
+      providers.each do |provider|
+        implemented = validation_methods.reject do |method|
+          provider.method(method).owner == described_class.singleton_class
+        end
+
+        expect(implemented).not_to be_empty, "#{provider} implements neither of #{validation_methods}"
+      end
+    end
+  end
+
+  describe '#log_options' do
+    let(:connection) { create(:ai_provider_connection) }
+
+    it 'attributes the HTTP log to the related object' do
+      instance = described_class.new(config: {}, related_object: connection)
+
+      expect(instance.log_options).to include(facility: 'AI::Provider', related_object: connection)
+    end
+
+    it 'omits the reference without a related object' do
+      expect(described_class.new(config: {}).log_options.keys).not_to include(:related_object)
+    end
+
+    # ping! and check_temperature_support! run before a connection exists.
+    it 'has no reference on class level' do
+      expect(described_class.log_options(only_on_error: true))
+        .to eq(facility: 'AI::Provider', log_only_on_error: true)
     end
   end
 
@@ -102,53 +283,55 @@ RSpec.describe AI::Provider do
     it 'returns the correct class' do
       expect(described_class.by_name('open_ai')).to eq(AI::Provider::OpenAI)
     end
+
+    it 'returns nil for an unknown provider' do
+      expect(described_class.by_name('does_not_exist')).to be_nil
+    end
+
+    # The namespace holds the provider errors and the concerns as well. Resolving one of those
+    # would pass for a provider - through the model validation and into a request against it.
+    it 'returns nil for a name that resolves to something other than a provider', :aggregate_failures do
+      expect(described_class.by_name('request_error')).to be_nil
+      expect(described_class.by_name('concerns')).to be_nil
+      expect(described_class.by_name('provider')).to be_nil
+    end
   end
 
-  describe '.by_config' do
-    it 'returns the correct class' do
-      config = { provider: 'open_ai' }
-      expect(described_class.by_config(config)).to eq(AI::Provider::OpenAI)
+  # The single source of what an unnamed model resolves to: it reaches the connection dialog
+  # through the model listing endpoint, so the AIProviders registry keeps no copy of it.
+  describe '.default_model' do
+    it 'has none on the base class' do
+      expect(described_class.default_model).to be_nil
     end
 
-    it 'returns nil when provider is blank' do
-      config = {}
-      expect(described_class.by_config(config)).to be_nil
+    it 'answers with the default of the adapter', :aggregate_failures do
+      expect(AI::Provider::OpenAI.default_model).to eq('gpt-4.1')
+      expect(AI::Provider::Anthropic.default_model).to eq('claude-sonnet-4-6')
+      expect(AI::Provider::Mistral.default_model).to eq('mistral-large-2512')
+      expect(AI::Provider::Ollama.default_model).to eq('mistral-small3.2')
+    end
+
+    # A custom endpoint serves whatever was deployed there, and Azure AI names its deployment in
+    # the URL - neither has a model to default to.
+    it 'answers with nothing for a provider without a default', :aggregate_failures do
+      expect(AI::Provider::CustomOpenAI.default_model).to be_nil
+      expect(AI::Provider::Azure.default_model).to be_nil
+      expect(AI::Provider::ZammadAI.default_model).to be_nil
     end
   end
 
-  describe '.current' do
-    before do
-      Setting.set('ai_provider_config', config, validate: false)
-      Setting.set('ai_provider', flag, validate: false)
+  describe '#initialize' do
+    it 'ignores a blank config model so the provider default applies' do
+      provider = AI::Provider::OpenAI.new(config: { token: 'sk-test', model: '' })
+
+      expect(provider.options[:model]).to eq(AI::Provider::OpenAI::DEFAULT_OPTIONS[:model])
     end
 
-    context 'when config is provided' do
-      let(:config) { { provider: 'open_ai' } }
+    # There is no default to apply for the embedding model: it is whatever the connection names.
+    it 'leaves a blank config embedding model unresolved' do
+      provider = AI::Provider::OpenAI.new(config: { token: 'sk-test', embedding_model: '' })
 
-      context 'when AI provider flag is true' do
-        let(:flag) { true }
-
-        it 'returns the correct class' do
-          expect(described_class.current).to eq(AI::Provider::OpenAI)
-        end
-      end
-
-      context 'when AI provider flag is false' do
-        let(:flag) { false }
-
-        it 'returns nil' do
-          expect(described_class.current).to be_nil
-        end
-      end
-    end
-
-    context 'when config is blank' do
-      let(:config) { {} }
-      let(:flag)   { true }
-
-      it 'returns nil' do
-        expect(described_class.current).to be_nil
-      end
+      expect(provider.embedding_model).to be_nil
     end
   end
 

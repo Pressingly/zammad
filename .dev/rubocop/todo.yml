@@ -177,6 +177,7 @@ Metrics/BlockLength:
     - 'app/models/concerns/can_be_published.rb'
     - 'app/models/concerns/can_clone_attachments.rb'
     - 'app/models/concerns/can_csv_import.rb'
+    - 'app/models/concerns/has_audit_logs.rb'
     - 'app/models/concerns/has_groups.rb'
     - 'app/models/concerns/has_history.rb'
     - 'app/models/concerns/has_rich_text.rb'
@@ -230,7 +231,6 @@ Metrics/BlockNesting:
     - 'app/models/concerns/has_history.rb'
     - 'app/models/object_manager/attribute.rb'
     - 'lib/notification_factory/mailer.rb'
-    - 'test/browser_test_helper.rb'
 
 Metrics/CyclomaticComplexity:
   Max: 12
@@ -335,6 +335,7 @@ Metrics/ModuleLength:
     - 'app/models/concerns/can_search.rb'
     - 'app/models/concerns/can_be_published.rb'
     - 'app/models/concerns/can_csv_import.rb'
+    - 'app/models/concerns/has_audit_logs.rb'
     - 'app/models/concerns/has_groups.rb'
     - 'app/models/concerns/has_history.rb'
     - 'app/models/concerns/has_rich_text.rb'
@@ -441,7 +442,6 @@ Metrics/PerceivedComplexity:
     - 'lib/telegram_helper.rb'
     - 'lib/transaction_dispatcher.rb'
     - 'lib/user_agent.rb'
-    - 'test/browser_test_helper.rb'
 
 Rails/CreateTableWithTimestamps:
   Exclude:
@@ -497,7 +497,6 @@ Style/OptionalBooleanParameter:
     - 'lib/sessions/backend/ticket_overview_list.rb'
     - 'lib/sessions/node.rb'
     - 'spec/support/system_init_done.rb'
-    - 'test/browser_test_helper.rb'
 
 Style/ReturnNilInPredicateMethodDefinition:
   Exclude:

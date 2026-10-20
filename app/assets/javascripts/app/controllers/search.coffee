@@ -9,6 +9,7 @@ class App.Search extends App.Controller
 
   events:
     'click .js-emptySearch': 'empty'
+    'click .js-shortcut': 'shortcutSearch'
     'submit form.search-holder': 'preventDefault'
     'keyup .js-search': 'listNavigate'
     'click .js-tab': 'showTab'
@@ -17,6 +18,28 @@ class App.Search extends App.Controller
     'click .js-sort': 'sortByColumn'
 
   @include App.ValidUsersForTicketSelectionMethods
+
+  searchShortcuts:
+    Ticket: [
+      { query: 'state.name:(new OR open)', label: __('New or open tickets') }
+      { query: 'created_at:>now-14d', label: __('Created within last 14 days') }
+      { query: 'updated_at:>now-3d', label: __('Updated within last 3 days') }
+    ]
+    User: [
+      { query: 'active:true', label: __('Active only') }
+      { query: 'vip:true', label: __('VIP only') }
+      { query: 'last_login:>now-7d', label: __('Logged in within last 7 days') }
+    ]
+    Organization: [
+      { query: 'active:true', label: __('Active only') }
+      { query: 'shared:true', label: __('Shared organizations') }
+      { query: 'created_at:>now-1M', label: __('Created within last month') }
+    ]
+
+  searchShortcutsDefault: [
+    { query: 'created_at:>now-14d', label: __('Created within last 14 days') }
+    { query: 'updated_at:>now-3d', label: __('Updated within last 3 days') }
+  ]
 
   constructor: ->
     super
@@ -73,8 +96,12 @@ class App.Search extends App.Controller
 
     @navupdate(url: '#search', type: 'menu')
 
+    ownNavigation = params.query? and params.query is @navigatedQuery
+    @navigatedQuery = undefined
+
     if !_.isEmpty(params.query) # When opening detailed search from the global search
-      @$('.js-search').val(params.query).trigger('keyup')
+      # The route runs on the asynchronous hashchange, so keys typed in the meantime would be overwritten.
+      @$('.js-search').val(params.query).trigger('keyup') if !ownNavigation
     else if @query # When coming back to detailed search taskbar from another taskbar
       @reloadCurrentSearch()
 
@@ -129,6 +156,7 @@ class App.Search extends App.Controller
     elLocal = $(App.view('search/index')(
       query: @query
       tabs: @tabs
+      searchShortcuts: App.Config.get('es_enabled') && @permissionCheck('ticket.agent')
     ))
 
     if App.User.current().permission('ticket.agent')
@@ -138,11 +166,13 @@ class App.Search extends App.Controller
         parent:   @
         parentEl: elLocal
         appEl:    @appEl
+        dragEnabled: => @model is 'Ticket'
         batchSuccess: =>
           @search(0, true)
       )
 
     @html elLocal
+    @renderShortcuts()
     if @query
       @search(500, true)
 
@@ -154,7 +184,7 @@ class App.Search extends App.Controller
       return
 
     # on other keys, show result
-    @navigate "#search/#{encodeURIComponent(@searchInput.val())}"
+    @navigateToQuery()
     @savedOrderBy = {}
     @search(0)
 
@@ -259,6 +289,7 @@ class App.Search extends App.Controller
     if @model isnt model
       @model = model
       @updateTask()
+      @renderShortcuts()
 
     list = []
     for item in localList
@@ -471,6 +502,26 @@ class App.Search extends App.Controller
     current.model = @model
     App.TaskManager.update(@taskKey, { state: current })
     App.TaskManager.touch(@taskKey)
+
+  renderShortcuts: =>
+    shortcuts = @searchShortcuts[@model] || @searchShortcutsDefault
+    @$('.js-shortcutsDropdown .dropdown-menu').remove()
+    @$('.js-shortcutsDropdown').append(App.view('search/shortcuts')(shortcuts: shortcuts))
+
+  shortcutSearch: (e) =>
+    e.preventDefault()
+    @$('.js-shortcutsDropdown [data-toggle="dropdown"]').dropdown('toggle')
+    @searchInput.val($(e.currentTarget).data('query'))
+    @updateFilledClass()
+    @resultPaginated = {}
+    @savedOrderBy = {}
+    @navigateToQuery()
+    @search(0)
+
+  navigateToQuery: =>
+    url = "#search/#{encodeURIComponent(@searchInput.val())}"
+    @navigatedQuery = @searchInput.val() if url isnt window.location.hash
+    @navigate url
 
   updateFilledClass: ->
     @searchInput.toggleClass 'is-empty', !@searchInput.val()

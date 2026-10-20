@@ -5,15 +5,16 @@ class Service::AI::Ticket::PreProcessArticleContent < Service::Base
   MARKER_START     = "[OCR_TEXT_START]\n".freeze
   MARKER_END       = "\n[OCR_TEXT_END]".freeze
 
-  attr_reader :articles, :skip_quotes_strip_first_article
+  attr_reader :articles, :skip_quotes_strip_first_article, :link_style
 
-  def initialize(articles:, skip_quotes_strip_first_article: false)
-    @articles = articles
+  def initialize(articles:, skip_quotes_strip_first_article: false, link_style: :markdown)
+    @articles                        = articles
     @skip_quotes_strip_first_article = skip_quotes_strip_first_article
+    @link_style                      = link_style
   end
 
   def execute
-    return prepared_articles if !ocr_active?
+    return prepared_articles if !use_ocr
 
     images = collect_all_images(prepared_articles)
     image_texts = recognize_image_texts(images)
@@ -22,8 +23,10 @@ class Service::AI::Ticket::PreProcessArticleContent < Service::Base
 
   private
 
-  def ocr_active?
-    Setting.get('ai_provider_config')[:ocr_active]
+  def use_ocr
+    return @use_ocr if defined?(@use_ocr)
+
+    @use_ocr = AI::ProviderConnection.for_ocr.present?
   end
 
   def non_plain_article?(article)
@@ -32,7 +35,7 @@ class Service::AI::Ticket::PreProcessArticleContent < Service::Base
 
   def prepared_articles
     @prepared_articles ||= articles.map do |article|
-      if ocr_active?
+      if use_ocr
         inline_images = select_inline_image_attachments(article)
         image_attachments = select_image_attachments(article, inline_images)
       end
@@ -40,13 +43,13 @@ class Service::AI::Ticket::PreProcessArticleContent < Service::Base
       text = article.body || ''
 
       # Replace inline images in the HTML body with placeholders.
-      text = replace_inline_images_with_placeholders(text, inline_images) if ocr_active? && non_plain_article?(article)
+      text = replace_inline_images_with_placeholders(text, inline_images) if use_ocr && non_plain_article?(article)
 
       # Remove quotes and strip HTML to get plain text.
       text = strip_html_and_maybe_remove_quotes(text, article)
 
       # Remove inline images that were stripped from the body (e.g. in the quotes or signatures).
-      inline_images = remove_stripped_inline_images(inline_images, text) if ocr_active? && non_plain_article?(article)
+      inline_images = remove_stripped_inline_images(inline_images, text) if use_ocr && non_plain_article?(article)
 
       {
         id:                article.id,
@@ -99,7 +102,7 @@ class Service::AI::Ticket::PreProcessArticleContent < Service::Base
   end
 
   def strip_html_and_maybe_remove_quotes(text, article)
-    text_for_quote_removal = non_plain_article?(article) ? text.html2text(link_style: :markdown) : text
+    text_for_quote_removal = non_plain_article?(article) ? text.html2text(link_style:) : text
     if article.type == Ticket::Article::Type.lookup(name: 'email') && (!skip_quotes_strip_first_article || article.id != first_article_id)
       Text::QuoteRemover
         .new(text: text_for_quote_removal, remove_signatures: true)
@@ -126,9 +129,7 @@ class Service::AI::Ticket::PreProcessArticleContent < Service::Base
     image_texts = {}
 
     images.each do |image|
-      ocr_result = AI::Service::OCR
-          .new(context_data: { store: image }, prompt_image: image)
-          .execute
+      ocr_result = Service::AI::Feature::OCR.execute(context_data: { store: image }, prompt_image: image)
 
       image_texts[image.store_file_id] = ocr_result.content
     rescue

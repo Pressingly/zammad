@@ -21,9 +21,8 @@ RSpec.describe Zammad::TranslationCatalog::Extractor::Erb do
     end
 
     it 'finds the correct strings' do
-      # rubocop:disable Lint/InterpolationCheck
+      # rubocop:disable-next Lint/InterpolationCheck
       expect(result_strings).to eq(['String', 'String that only looks like #{interpolation}', "Double quoted String with '"].sort)
-      # rubocop:enable Lint/InterpolationCheck
     end
   end
 
@@ -43,7 +42,7 @@ RSpec.describe Zammad::TranslationCatalog::Extractor::Erb do
 
   context 'with strings too long' do
     let(:string) do
-      <<~"CODE"
+      <<~CODE
         <%= t("#{'a' * 3001}") %>
       CODE
     end

@@ -2,8 +2,11 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useRoute } from 'vue-router'
 
 import CommonLogo from '#shared/components/CommonLogo/CommonLogo.vue'
+
+import { useTransitionConfig } from '#desktop/composables/useTransitionConfig.ts'
 
 import LayoutPublicPageBoxActions from './LayoutPublicPageBoxActions.vue'
 
@@ -31,6 +34,13 @@ const boxSizeClass = computed(() => {
 })
 
 const hoverPoweredByLogo = ref(false)
+
+const { transitions } = useTransitionConfig()
+
+const route = useRoute()
+
+// Route-page skin scope: the active route name on the single data-zammad-target hook.
+const routeTarget = computed(() => (route.name ? String(route.name) : undefined))
 </script>
 
 <template>
@@ -40,6 +50,7 @@ const hoverPoweredByLogo = ref(false)
     <div :class="boxSizeClass" class="m-auto w-full">
       <main
         class="flex flex-col gap-2.5 rounded-3xl bg-neutral-50 p-5 text-black dark:bg-gray-500 dark:text-white"
+        :data-zammad-target="routeTarget"
       >
         <div v-if="showLogo" class="flex justify-center">
           <CommonLogo />
@@ -78,7 +89,7 @@ const hoverPoweredByLogo = ref(false)
         >
           <div class="relative">
             <CommonIcon name="logo-flat" size="base" />
-            <Transition name="fade">
+            <Transition :name="transitions.fade">
               <CommonIcon
                 v-if="hoverPoweredByLogo"
                 class="absolute top-0"

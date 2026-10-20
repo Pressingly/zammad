@@ -13,7 +13,11 @@ import VuePlugin from '@vitejs/plugin-vue'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+import { discoverAddonWeaveRules } from './app/frontend/build/addonWeave/discoverRules.mjs'
+import addonWeavePlugin from './app/frontend/build/addonWeave/plugin.mjs'
 import svgIconsPlugin from './app/frontend/build/iconsPlugin.mjs'
+import { discoverSkinMarkerClashes } from './app/frontend/build/skinMarker/discoverClashes.mjs'
+import skinMarkerPlugin from './app/frontend/build/skinMarker/plugin.mjs'
 
 const dir = dirname(fileURLToPath(import.meta.url))
 
@@ -21,13 +25,24 @@ const SSL_PATH = resolve(homedir(), '.local/state/localhost.rb')
 
 const isEnvBooleanSet = (value) => ['true', '1'].includes(value)
 
-export default defineConfig(({ mode, command }) => {
+export default defineConfig(async ({ mode, command }) => {
   const isTesting = ['test', 'cypress'].includes(mode)
   const isBuild = command === 'build'
 
   const require = createRequire(import.meta.url)
 
+  // Build-time addon weave: discover every installed addon's *.weave.mjs manifest
+  // and rewrite the targeted core SFC source before the Vue compiler runs.
+  const addonWeaveRules = await discoverAddonWeaveRules()
+
   const plugins = [
+    // enforce: 'pre' → both run before VuePlugin compiles the SFC.
+    addonWeavePlugin(addonWeaveRules),
+    // Auto-stamp data-zammad-target on native SFC roots — the stable custom-CSS
+    // hook. Skipped under test, where it would perturb component DOM snapshots.
+    ...(isTesting || isEnvBooleanSet(process.env.VITE_TEST_MODE)
+      ? []
+      : [skinMarkerPlugin(discoverSkinMarkerClashes())]),
     tailwindcss(),
     VuePlugin({
       template: {
@@ -151,6 +166,12 @@ export default defineConfig(({ mode, command }) => {
     },
     server: {
       https,
+      // The HMR websocket cannot ride the Rails asset proxy (no upgrade support) — point
+      // the client directly at the Vite dev server port instead of the page origin.
+      hmr: {
+        host: process.env.VITE_RUBY_HOST || 'localhost',
+        clientPort: Number(process.env.VITE_RUBY_PORT || 3036),
+      },
       watch: {
         ignored: isTesting
           ? []

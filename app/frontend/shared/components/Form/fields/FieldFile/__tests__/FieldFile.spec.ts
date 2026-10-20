@@ -10,10 +10,14 @@ import { mockApplicationConfig } from '#tests/support/mock-applicationConfig.ts'
 import { mockGraphQLApi } from '#tests/support/mock-graphql-api.ts'
 import { waitUntil } from '#tests/support/utils.ts'
 
-import CommonImageViewer from '#shared/components/CommonImageViewer/CommonImageViewer.vue'
 import type { FormFieldContext } from '#shared/components/Form/types/field.ts'
 import type { FormUploadCacheAddMutation } from '#shared/graphql/types.ts'
 import { createDeferred } from '#shared/utils/helpers.ts'
+
+// The image viewer is app-specific, the mobile one is used here to assert the
+//   generic preview behavior of the field.
+// eslint-disable-next-line import/no-restricted-paths
+import CommonImageViewer from '#mobile/components/CommonImageViewer/CommonImageViewer.vue'
 
 import { FormUploadCacheAddDocument } from '../graphql/mutations/uploadCache/add.api.ts'
 import { FormUploadCacheRemoveDocument } from '../graphql/mutations/uploadCache/remove.api.ts'
@@ -278,8 +282,10 @@ describe('Fields - FieldFile', () => {
     const file = new File([], 'foo.png', { type: 'image/png' })
     const uploadedFileQuery: FormUploadCacheAddMutation = {
       formUploadCacheAdd: {
+        __typename: 'FormUploadCacheAddPayload',
         uploadedFiles: [
           {
+            __typename: 'StoredFile',
             id: '1',
             name: file.name,
             size: file.size,
@@ -296,7 +302,7 @@ describe('Fields - FieldFile', () => {
     mockAdd.spies.resolve.mockResolvedValue(promise)
 
     await view.events.upload(view.getByTestId('fileInput'), [file])
-    expect(await view.findByLabelText("File 'foo.png' is uploading")).toBeInTheDocument()
+    expect(await view.findByLabelText('Uploading file: foo.png')).toBeInTheDocument()
 
     resolve({ data: uploadedFileQuery })
     expect(await view.findByRole('button', { name: 'Preview foo.png' })).toBeInTheDocument()

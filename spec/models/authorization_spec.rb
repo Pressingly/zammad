@@ -6,6 +6,11 @@ RSpec.describe Authorization, type: :model do
   describe 'User assets' do
     subject(:authorization) { create(:twitter_authorization) }
 
+    # linked accounts are only part of the assets for the user itself or a privileged caller
+    around do |example|
+      UserInfo.with_system_context { example.run }
+    end
+
     it 'does update assets after new authorizations created' do
       authorization.user.assets({})
       create(:twitter_authorization, provider: 'twitter2', user: authorization.user)
@@ -122,8 +127,8 @@ RSpec.describe Authorization, type: :model do
           Setting.set('auth_microsoft_office365_credentials', { 'require_verified_email_domain' => true })
         end
 
-        context 'when xms_edov is true' do
-          let(:extra) { { 'id_token_claims' => { 'xms_edov' => true } } }
+        context 'when xms_edov is true and the "email" claim matches' do
+          let(:extra) { { 'id_token_claims' => { 'xms_edov' => true, 'email' => email } } }
 
           include_examples 'links account with email address'
         end
@@ -135,6 +140,20 @@ RSpec.describe Authorization, type: :model do
         end
 
         context 'when xms_edov is absent' do
+          include_examples 'does not link account with unverified email address'
+        end
+
+        # "xms_edov" only vouches for the ID token's "email" claim, not for the
+        # separate Graph "/me" address in "info.email" that actually gets linked.
+        context 'when xms_edov is true but the "email" claim is a different address' do
+          let(:extra) { { 'id_token_claims' => { 'xms_edov' => true, 'email' => 'somebody.else@example.com' } } }
+
+          include_examples 'does not link account with unverified email address'
+        end
+
+        context 'when xms_edov is true but the "email" claim is absent' do
+          let(:extra) { { 'id_token_claims' => { 'xms_edov' => true } } }
+
           include_examples 'does not link account with unverified email address'
         end
       end

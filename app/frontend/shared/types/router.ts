@@ -22,6 +22,9 @@ export interface RouteRecordMeta {
   title?: string
   requiresAuth: boolean
   requiredPermission: Maybe<RequiredPermission>
+  // Dynamic access gate evaluated on top of `requiredPermission` (e.g. feature
+  //   flags / config settings). Both must pass to enter/show the route.
+  canAccess?: () => boolean
   redirectToDefaultRoute?: boolean
   hasBottomNavigation?: boolean
   customBottomNavigation?: boolean
@@ -31,6 +34,10 @@ export interface RouteRecordMeta {
   taskbarTabEntityKey?: string
   isTaskbarTabPossible?: (route: RouteLocationNormalizedGeneric) => boolean
   level?: number
+  // Desktop only: opts the route into the main navigation sidebar. Set
+  //   `navigationGroup` in addition to nest it under a shared parent menu.
+  mainNavigation?: boolean
+  navigationGroup?: string
   pageKey?: string
   permanentItem?: boolean
   skipRedirect?: (toRoute: RouteLocationNormalizedGeneric) => boolean
