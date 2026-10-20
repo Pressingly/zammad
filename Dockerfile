@@ -74,8 +74,8 @@ RUN if [ -z "${COMMIT_SHA}" ]; then \
     echo "Error: the required build argument \$COMMIT_SHA is missing."; \
     exit 1; \
   fi; \
-  if ! [[ "${COMMIT_SHA}" =~ ^[0-9a-fA-F]{8,40}$ ]]; then \
-    echo "Error: the build argument \$COMMIT_SHA must match [0-9a-fA-F]{8,40}, got '${COMMIT_SHA}'."; \
+  if ! [[ "${COMMIT_SHA}" =~ ^[0-9a-fA-F]{7,40}$ ]]; then \
+    echo "Error: the build argument \$COMMIT_SHA must match [0-9a-fA-F]{7,40}, got '${COMMIT_SHA}'."; \
     exit 1; \
   fi; \
   if [ -n "${BUILD_LABEL}" ] && ! [[ "${BUILD_LABEL}" =~ ^[0-9a-zA-Z_.-]{1,35}$ ]]; then \
