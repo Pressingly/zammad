@@ -2,7 +2,7 @@
 
 class TriggerWebhookJob < ApplicationJob
 
-  attr_reader :ticket, :trigger, :article, :changes, :user_id, :execution_type, :event_type
+  attr_reader :ticket, :trigger, :article, :changes, :user_id, :execution_type, :event_type, :webhook_id
 
   retry_on TriggerWebhookJob::RequestError, attempts: 5, wait: lambda { |executions|
     executions * 10.seconds
@@ -13,7 +13,7 @@ class TriggerWebhookJob < ApplicationJob
     Rails.logger.info e
   end
 
-  def perform(trigger, ticket, article, changes:, user_id:, execution_type:, event_type:)
+  def perform(trigger, ticket, article, changes:, user_id:, execution_type:, event_type:, webhook_id: nil)
     @trigger = trigger
     @ticket  = ticket
     @article = article
@@ -22,12 +22,17 @@ class TriggerWebhookJob < ApplicationJob
     @execution_type = execution_type
     @event_type = event_type
 
+    # The webhook id is passed explicitly per spawned job. The fallback reads it from the
+    #   trigger config for legacy jobs enqueued before the multi-webhook change (the stored
+    #   value may be a single id or an array, so we take the first one).
+    @webhook_id = webhook_id || Array.wrap(trigger.perform.dig('notification.webhook', 'webhook_id')).first
+
     return if abort?
     return if request.success?
 
     raise TriggerWebhookJob::RequestError
   rescue HostnameSafetyCheck::SafetyError => e
-    Rails.logger.error "Can't execute Webhook with ID #{webhook_id} for Trigger '#{trigger.name}' with ID #{trigger.id}: #{e.message}"
+    Rails.logger.error "Can't execute Webhook with ID #{@webhook_id} for Trigger '#{trigger.name}' with ID #{trigger.id}: #{e.message}"
   end
 
   private
@@ -42,10 +47,6 @@ class TriggerWebhookJob < ApplicationJob
     end
 
     false
-  end
-
-  def webhook_id
-    @webhook_id ||= trigger.perform.dig('notification.webhook', 'webhook_id')
   end
 
   def webhook
@@ -86,7 +87,8 @@ class TriggerWebhookJob < ApplicationJob
         bearer_token:            webhook.bearer_token,
         do_not_follow_redirects: true,
         log:                     {
-          facility: 'webhook',
+          facility:       'webhook',
+          related_object: webhook,
         },
         validate_safety:         { allow_private: true, allow_loopback: true },
       },
@@ -100,11 +102,16 @@ class TriggerWebhookJob < ApplicationJob
     }
   end
 
+  # The payload is built for the receiving system and not for a user, so it needs the full
+  #   attributes rather than the unprivileged default of a blank user context. Asking for the
+  #   privilege here keeps the payload complete no matter how the job itself was started.
   def default_payload
-    {
-      ticket:  TriggerWebhookJob::RecordPayload.generate(ticket),
-      article: TriggerWebhookJob::RecordPayload.generate(article),
-    }
+    UserInfo.with_system_context do
+      {
+        ticket:  TriggerWebhookJob::RecordPayload.generate(ticket),
+        article: TriggerWebhookJob::RecordPayload.generate(article),
+      }
+    end
   end
 
   def payload
@@ -163,7 +170,7 @@ class TriggerWebhookJob < ApplicationJob
     interpolator = Service::Template::Interpolation::Interpolator.new( # rubocop:disable Zammad/ForbidCallingServiceDirectly
       template: endpoint,
       tracks:,
-      mode:     :string,
+      mode:     :url,
     )
 
     interpolator.execute

@@ -39,7 +39,11 @@ RSpec.describe Service::Translation::Search do
       end
 
       context 'when case sensitive should match' do
-        let(:query) { Translation.last.source.downcase }
+        # Use an own record instead of an existing one, to not depend on the current database content.
+        let(:mixed_case_translation) do
+          create(:translation, locale: locale, source: "Existing #{SecureRandom.uuid}", target: 'Vorhanden', is_synchronized_from_codebase: true)
+        end
+        let(:query) { mixed_case_translation.source.downcase }
 
         it 'returns also with case insensitive a result' do
           expect(service_result[:items].count).to eq(2)
@@ -80,6 +84,17 @@ RSpec.describe Service::Translation::Search do
 
           context 'with description attribute' do
             it_behaves_like 'returns filtered result', :public_link, 'description', 2
+          end
+
+          context 'with nil description on a public link' do
+            before do
+              create(:public_link, description: nil)
+              create(:public_link, description: "desc #{query}")
+            end
+
+            it 'does not crash on nil descriptions' do
+              expect { service_result }.not_to raise_error
+            end
           end
         end
 

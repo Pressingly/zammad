@@ -1,7 +1,7 @@
 <!-- Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/ -->
 
 <script setup lang="ts">
-import { toRef, watch } from 'vue'
+import { computed, toRef, watch } from 'vue'
 
 import type { AvatarUser } from '#shared/components/CommonUserAvatar/types.ts'
 import ObjectAttributeContent from '#shared/components/ObjectAttributes/ObjectAttribute.vue'
@@ -12,6 +12,7 @@ import { getIdFromGraphQLId } from '#shared/graphql/utils.ts'
 import { useApplicationStore } from '#shared/stores/application.ts'
 import type { ObjectWithId } from '#shared/types/utils.ts'
 
+import CommonLoader from '#desktop/components/CommonLoader/CommonLoader.vue'
 import CommonAdvancedTable from '#desktop/components/CommonTable/CommonAdvancedTable.vue'
 import CommonTableSkeleton from '#desktop/components/CommonTable/Skeleton/CommonTableSkeleton.vue'
 import CommonTicketPriorityIndicatorIcon from '#desktop/components/CommonTicketPriorityIndicator/CommonTicketPriorityIndicatorIcon.vue'
@@ -75,14 +76,31 @@ const userPopoverSlots: {
   { slotName: 'column-cell-customer_id', ticketAttribute: 'customer' },
   { slotName: 'column-cell-owner_id', ticketAttribute: 'owner' },
 ]
+
+// Matching the general ticket structure for the default layout column width
+const columnWidths = computed(() =>
+  [
+    25, // State icon
+    config.value.ui_ticket_priority_icons ? 25 : 0, // Priority icon
+    ...Array.from({ length: props.headers.length - 1 }, () => 335),
+  ].filter(Boolean),
+)
+
+const skeletonColumns = computed(() => columnWidths.value.length)
 </script>
 
 <template>
-  <CommonTableSkeleton
-    :loading="loading"
-    :loading-new-page="loadingNewPage"
-    :rows="skeletonLoadingCount"
-  >
+  <CommonLoader :loading="loading">
+    <template #skeleton>
+      <CommonTableSkeleton
+        :columns="skeletonColumns"
+        :has-bulk-action="bulkEditActive"
+        :load-more="loadingNewPage"
+        :rows="skeletonLoadingCount"
+        :column-widths="columnWidths"
+      />
+    </template>
+
     <slot v-if="!loading && !items.length" name="empty-list" />
 
     <div v-else-if="items.length">
@@ -237,5 +255,5 @@ const userPopoverSlots: {
         </template>
       </CommonAdvancedTable>
     </div>
-  </CommonTableSkeleton>
+  </CommonLoader>
 </template>

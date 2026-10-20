@@ -65,11 +65,11 @@ RSpec.describe Gql::Subscriptions::Ticket::AIAssistance::SummaryUpdates, authent
       end
 
       let(:expected_result) do
-        AI::Service::Result.new(
+        Service::AI::Feature::Result[
           content:          expected_summary,
           fresh:            true,
           ai_analytics_run:
-        )
+        ]
       end
 
       let(:expected_broadcasted_summary) do
@@ -90,7 +90,7 @@ RSpec.describe Gql::Subscriptions::Ticket::AIAssistance::SummaryUpdates, authent
       end
 
       it 'receives new summary data' do
-        TicketAIAssistanceSummarizeJob.new.perform(ticket, agent.locale)
+        TicketAIAssistanceSummarizeJob.new.perform(ticket, agent.locale, current_user: agent)
         expect(mock_channel.mock_broadcasted_messages.first).to include(
           result: include(
             'data' => include(
@@ -109,7 +109,7 @@ RSpec.describe Gql::Subscriptions::Ticket::AIAssistance::SummaryUpdates, authent
         end
 
         it 'receives new summary data' do
-          TicketAIAssistanceSummarizeJob.new.perform(ticket, agent.locale)
+          TicketAIAssistanceSummarizeJob.new.perform(ticket, agent.locale, current_user: agent)
           expect(mock_channel.mock_broadcasted_messages.first).to include(
             result: include(
               'data' => include(
@@ -128,7 +128,7 @@ RSpec.describe Gql::Subscriptions::Ticket::AIAssistance::SummaryUpdates, authent
         end
 
         it 'receives new summary data' do
-          TicketAIAssistanceSummarizeJob.new.perform(ticket, agent.locale)
+          TicketAIAssistanceSummarizeJob.new.perform(ticket, agent.locale, current_user: agent)
           expect(mock_channel.mock_broadcasted_messages.first).to include(
             result: include(
               'data' => include(
@@ -156,7 +156,7 @@ RSpec.describe Gql::Subscriptions::Ticket::AIAssistance::SummaryUpdates, authent
             let(:rating) { nil }
 
             it 'returns cached version with usage info' do
-              TicketAIAssistanceSummarizeJob.new.perform(ticket, agent.locale)
+              TicketAIAssistanceSummarizeJob.new.perform(ticket, agent.locale, current_user: agent)
               expect(mock_channel.mock_broadcasted_messages.first).to include(
                 result: include(
                   'data' => include(
@@ -182,7 +182,7 @@ RSpec.describe Gql::Subscriptions::Ticket::AIAssistance::SummaryUpdates, authent
             let(:rating) { false }
 
             it 'returns cached version with usage info' do
-              TicketAIAssistanceSummarizeJob.new.perform(ticket, agent.locale)
+              TicketAIAssistanceSummarizeJob.new.perform(ticket, agent.locale, current_user: agent)
               expect(mock_channel.mock_broadcasted_messages.first).to include(
                 result: include(
                   'data' => include(

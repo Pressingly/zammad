@@ -59,12 +59,20 @@ class BackgroundServices
         end
       end
 
+      # Must agree with the checks in Sessions::Client#fetch, otherwise a session that is no
+      #   longer allowed would have its client thread restarted here after every exit.
       def valid_client_session?(client_id)
-        session_user_id = Sessions.get(client_id)&.dig(:user, 'id')
+        session_user = Sessions.get(client_id)&.dig(:user)
 
-        return false if session_user_id.blank?
+        return false if session_user.blank?
+        return false if session_user['id'].blank?
 
-        User.exists?(session_user_id)
+        user = User.find_by(id: session_user['id'], active: true)
+        return false if !user
+
+        return false if Auth::SwitchedSession.revoked?(session_user['switched_from_user_id'])
+
+        !Auth::MaintenanceMode.blocks?(user, switched_from_user_id: session_user['switched_from_user_id'])
       end
 
       def start_client_session_thread(client_id)
@@ -72,7 +80,7 @@ class BackgroundServices
           Thread.current.name = "ProcessSessionJobs session client thread (client_id: #{client_id})"
 
           Rails.application.executor.wrap do
-            Sessions.thread_client(client_id, 0, Time.now.utc, fork_id)
+            Sessions.thread_client(client_id, fork_id)
             client_threads.delete(client_id)
             Rails.logger.info { "Closing session client (#{client_id}) thread" }
           end

@@ -1,64 +1,408 @@
 # Breaking Changes
 
+## Upcoming releases
+
+### Inline attachments will be listed separately in ticket article API responses
+
+**Who is affected?** Integrations that read inline images from the `attachments` list of ticket article
+REST API responses.
+
+Ticket article responses such as `GET /api/v1/ticket_articles/{id}` currently include inline image
+attachments in the `attachments` list. In a future release they will no longer be part of that list and
+will be returned in a dedicated `inline_attachments` key instead.
+
+⚠️ Update such integrations to read inline images from the new `inline_attachments` key.
+
+**Related issue:** [#6254](https://github.com/zammad/zammad/issues/6254)
+
+### Deleting organizations via API will require the `admin.organization` permission
+
+**Who is affected?** Integrations that call `DELETE /api/v1/organizations/:id` with a token that only
+has the `ticket.agent` permission.
+
+The endpoint has historically been permitted for users with only the `ticket.agent` permission. That is
+deprecated and will be restricted to `admin.organization` in a future release; agent tokens will then
+receive `403 Forbidden`.
+
+⚠️ Switch such integrations to an account with the `admin.organization` permission.
+
+**Related issue:** [#6315](https://github.com/zammad/zammad/issues/6315)
+
+### Import mode will also enable maintenance mode
+
+**Who is affected?** Admins of instances that are left in import mode while users are expected to work
+in them.
+
+Import mode was never intended for productive environments. In a future release, an instance running in
+import mode will automatically run in maintenance mode as well, which prevents non-admin users from
+logging in.
+
+⚠️ Disable import mode before letting users work in the instance.
+
+**Related issue:** [#6237](https://github.com/zammad/zammad/issues/6237)
+
+### `Exceptions::UnprocessableEntity` will be removed
+
+**Who is affected?** Developers of custom packages, patches or add-ons that still reference
+`Exceptions::UnprocessableEntity`.
+
+The constant, deprecated since Zammad 7.1, will be removed in Zammad 8.0. Code still using it will then
+raise `NameError: uninitialized constant Exceptions::UnprocessableEntity`.
+
+⚠️ Switch to `Exceptions::UnprocessableContent` before updating to Zammad 8.0.
+
+**Related issue:** [#6198](https://github.com/zammad/zammad/issues/6198)
+
+### The deprecated `Rails.application.config.db_*` values will be removed
+
+**Who is affected?** Developers of custom packages, patches or add-ons that read database preferences
+from the Rails configuration.
+
+The values deprecated with the removal of MySQL support in Zammad 7.0 will be removed in Zammad 8.0.
+Until then they emit a deprecation warning and return the value that always applies to PostgreSQL:
+
+- `Rails.application.config.db_null_byte` — always `false`
+- `Rails.application.config.db_case_sensitive` — always `true`
+- `Rails.application.config.db_like` — always `ILIKE`
+- `Rails.application.config.db_column_array` — always `true`
+
+⚠️ Remove branches that depend on these values from custom code and rely on the PostgreSQL behaviour
+instead.
+
+**Related issue:** [#5580](https://github.com/zammad/zammad/issues/5580)
+
+## 7.2
+
+### Verifying a signup email address no longer signs the user in
+
+**Who is affected?** Integrations that redeem a signup verification token through
+`POST /api/v1/users/email_verify` or the `userSignupVerify` GraphQL mutation and rely on the session
+that the redemption used to establish, and admins who send a verification or password reset link to a
+deactivated account.
+
+Redeeming the token established a fully authenticated session for the account, without the account's
+password and without the second factor configured for it. Both endpoints now only mark the email
+address as verified and establish no session. The REST endpoint still answers
+`200 {"message":"ok","user_email":"…"}`, but the response no longer carries a session cookie. The
+mutation's payload field `session` was replaced by a boolean `success`, so a client selecting
+`session { id }` receives a GraphQL error.
+
+A non-persistent token — `Signup`, `PasswordReset`, `AdminAuth`, `KnowledgeBasePreview` — is now
+rejected when it belongs to an inactive user. Previously only persistent tokens were checked this
+way. The mail carrying such a link is still sent, but the link itself no longer works while the
+account is deactivated.
+
+⚠️ Sign in through `POST /api/v1/signin` or the `login` mutation after redeeming a verification
+token, and pass the configured second factor there. Change GraphQL clients to select `success`
+instead of `session`. Activate a deactivated account before sending it a verification or password
+reset link.
+
+**Related advisory:** [GHSA-f3qr-94c2-7mx2](https://github.com/zammad/zammad/security/advisories/GHSA-f3qr-94c2-7mx2)
+
+### The getting started endpoints require `admin.wizard` once the system is set up
+
+**Who is affected?** Integrations that read `GET /api/v1/getting_started` or
+`GET /api/v1/getting_started/auto_wizard` while authenticated as a user without the `admin.wizard`
+permission, and any integration that reads them while a migration is running.
+
+On a system that is set up, both endpoints returned the list of active groups and of active email
+addresses, the branding config and the available email channel drivers to every authenticated user,
+customers included. That data is only of use to a user who may run the setup wizard, and it is
+restricted on its own endpoints: `GET /api/v1/email_addresses` answers a customer with `403`, and
+`GET /api/v1/groups/:id` field-scopes its response. Both endpoints now answer a user without
+`admin.wizard` with `403 Forbidden` instead.
+
+Before the setup, and while a migration is running, the endpoints stay reachable without
+authentication: a migration is started anonymously from the installer, and its progress screens have
+no user to authenticate as. While a migration is running the response is now reduced to the setup and
+migration state — `setup_done`, `import_mode`, `import_backend` and `system_online_service` — which
+is all those screens read; the group and email address list, the branding config and the email
+channel drivers are no longer part of it, for any caller. A migration only clears its import mode
+when it succeeds, so a failed one would otherwise keep that data readable without authentication
+indefinitely. Outside a migration the response is unchanged for users with `admin.wizard`.
+
+⚠️ Switch integrations that read the group or email address list from these endpoints to an account
+with the `admin.wizard` permission — an API token needs that permission in its scope as well — or to
+`GET /api/v1/groups` respectively `GET /api/v1/email_addresses`.
+
+**Related advisory:** [GHSA-x3fm-p95w-xj7v](https://github.com/zammad/zammad/security/advisories/GHSA-x3fm-p95w-xj7v)
+
+### The legacy WebSocket login is authenticated from the session cookie and `signshow` no longer returns `session_id`
+
+**Who is affected?** Developers of custom clients that connect to the legacy WebSocket server and
+authenticate with a `session_id` in the `login` event, integrations that read `session_id` from the
+`GET /api/v1/signshow` response, and admins whose `http_type` and `fqdn` settings do not match the URL
+users open Zammad with.
+
+The `GET /api/v1/signshow` response contained the ID of the current session for logged-in users, and the
+legacy frontend sent that ID in the `login` event of the WebSocket connection to authenticate it. Exposing
+the session ID to page scripts was unnecessary and made it easier to steal a session. The `session_id`
+key was removed from the response, and the WebSocket server now ignores any `session_id` in the `login`
+payload. Instead it resolves the user from the session cookie sent with the WebSocket handshake, in the
+same way ActionCable already does for the new frontend, and only if the handshake `Origin` header matches
+`<http_type>://<fqdn>` or a localhost origin. A `login` event without a matching cookie and origin creates
+an unauthenticated WebSocket session that receives no user-specific data.
+
+⚠️ Send the session cookie with the WebSocket handshake instead of a `session_id` in the `login` payload,
+and make sure the `http_type` and `fqdn` settings match the origin users open Zammad with.
+
+**Related advisory:** [GHSA-23hj-h8w6-rgm3](https://github.com/zammad/zammad/security/advisories/GHSA-23hj-h8w6-rgm3)
+
+### Zammad's reverse proxy configuration is authoritative for the request scheme
+
+**Who is affected?** Admins running the Docker images or a newly installed nginx behind a proxy
+that reports the request scheme via the `Forwarded` or `X-Forwarded-Ssl` header, and admins of a
+newly installed Apache behind any TLS-terminating proxy.
+
+Rack evaluates `X-Forwarded-Ssl` and `Forwarded` with a higher priority than `X-Forwarded-Proto`, so
+an outer proxy could silently override the scheme that Zammad's own web server configuration had set.
+The nginx and Apache configurations shipped with Zammad therefore now clear `Forwarded`,
+`X-Forwarded-Scheme` and `X-Forwarded-Ssl`, which leaves `X-Forwarded-Proto` as the only place where
+the scheme is decided.
+
+The Apache configurations did not set `X-Forwarded-Proto` at all before, so an instance behind an
+SSL-terminating Apache was never seen as HTTPS. They now set it explicitly, to `http` in the non-SSL
+and to `https` in the SSL virtual host, which also means an outer proxy's value is no longer passed
+through.
+
+The Docker images rebuild their nginx configuration from the shipped one on every start, so the change
+applies to them automatically. Package installations keep the web server configuration they already
+have; only newly installed ones receive the updated files.
+
+⚠️ If Zammad was reachable over HTTPS only because the proxy in front of it sent `Forwarded` or
+`X-Forwarded-Ssl` — or, on Apache, `X-Forwarded-Proto` — configure the scheme in Zammad's own web
+server instead: set `NGINX_SERVER_SCHEME=https` for the Docker images, or the `X-Forwarded-Proto` line
+in the nginx respectively Apache configuration file.
+
+**Related issue:** [#6305](https://github.com/zammad/zammad/issues/6305)
+
+### Links between an object and itself are rejected, and failed link creations answer `422`
+
+**Who is affected?** Integrations that create links via `POST /api/v1/links/add`.
+
+An object can no longer be linked to itself: a link whose source and target are the same ticket or
+knowledge base answer is rejected with the validation error `An object cannot be linked to itself.`.
+Such a link was never usable — it showed up twice in the link list and was not clickable.
+
+At the same time the endpoint reports failed link creations correctly. Previously it answered
+`201 Created` as soon as the source object was found, even when the link was not stored at all, so an
+already existing link looked like a success. A rejected link now answers `422 Unprocessable Content`
+with the reason in the `error` key, for example `{"error":"Link already exists"}`.
+
+⚠️ Update integrations that treat every response of the endpoint as a success, and stop sending
+self-links.
+
+**Related issue:** [#6319](https://github.com/zammad/zammad/issues/6319)
+
+### Dates with a year outside 1 to 9999 are no longer accepted
+
+**Who is affected?** Integrations that write date or datetime values with a year outside the range 1
+to 9999, for example a ticket object attribute set via `PUT /api/v1/tickets/:id`.
+
+Date and datetime attributes of all objects are now validated against the year range that
+Elasticsearch and RFC 3339 support. Previously such a value was stored, but broke the indexing of the
+whole record afterwards, so the affected ticket, user or organization could no longer be found via
+search at all. Saving a value like `20026-08-18` now fails with the validation error
+`must have a year between 1 and 9999` instead.
+
+Only attributes that are actually changed by a save are validated, so existing records keep their
+out-of-range values until the affected attribute is written again.
+
+⚠️ Update integrations that send such values, and correct existing out-of-range dates to make the
+affected records findable again.
+
+**Related issue:** [#6306](https://github.com/zammad/zammad/issues/6306)
+
+### Import mode is reported as an issue by the health check
+
+**Who is affected?** Admins of instances that are left in import mode after a migration, and monitoring
+setups that alert on the `health_check` endpoint.
+
+Import mode is only meant for bulk imports and migrations, never for productive operation. The
+`health_check` endpoint and the "Monitoring" section therefore now report an issue while `import_mode`
+is enabled, which turns a previously green monitoring check red. The same applies while
+`system_init_done` is still `false`.
+
+⚠️ Disable import mode once a migration is finished, or expect the monitoring check to stay red.
+
+**Related issue:** [#6236](https://github.com/zammad/zammad/issues/6236)
+
+### Knowledge Base answers index a new `publication_state` field
+
+**Who is affected?** Admins of systems with Elasticsearch enabled who update to Zammad 7.2 without
+rebuilding the search index.
+
+The "Suggested searches" shortcut menu added to the Knowledge Base search introduced a new
+`publication_state` field for `KnowledgeBase::Answer::Translation`, reflecting an answer's current
+state (draft, internal, published, archived). Existing indices do not contain the field, so
+`publication_state` queries such as `publication_state:draft` return no results.
+
+⚠️ Rebuild the search index after the update: `zammad run rake zammad:searchindex:rebuild`
+
+**Related issue:** [#6142](https://github.com/zammad/zammad/issues/6142)
+
+### Elasticsearch 7 is no longer supported, 8.15 is the new minimum
+
+**Who is affected?** Admins of systems that run an Elasticsearch older than 8.15, including every
+Elasticsearch 7 installation.
+
+Elasticsearch 7 has reached its end of life and was deprecated with Zammad 7.1. Support for it was
+removed with this release, so the supported range is now **Elasticsearch 8.15 up to, but not
+including, 10** — 8.15 and later 8.x releases and every 9.x release. The requirement is enforced
+where Zammad reads the server version: the `zammad:searchindex:*` rake tasks, including
+`zammad:searchindex:rebuild`, and the "Elasticsearch version" system report abort with
+`Version <x> of configured elasticsearch is not supported.`
+
+⚠️ Upgrade the Elasticsearch installation to 8.15 or newer before updating to Zammad 7.2. Note that
+Elasticsearch 10 and later are not supported either.
+
+**Related issue:** [#6314](https://github.com/zammad/zammad/issues/6314)
+
+### Local file paths are no longer supported as calendar iCal feed source
+
+**Who is affected?** Admins of instances with a calendar whose iCalendar feed points to a local `.ics`
+file instead of an HTTP(S) URL.
+
+Calendars can no longer read their iCal feed from the local file system. Only `http://` and `https://`
+URLs are accepted, which is now enforced by a validation of the `ical_url` attribute. Calendars that
+still hold a local path stop syncing their public holidays, and saving them fails until the value is
+changed.
+
+⚠️ Host the `.ics` file on an HTTP(S) server and update the calendar's iCalendar feed accordingly.
+
+**Related issue:** [#6316](https://github.com/zammad/zammad/issues/6316)
+
+### The deprecated `es-ca` locale was inactivated
+
+**Who is affected?** Admins of instances with users or a Knowledge Base still set to the deprecated
+Catalan locale `es-ca`.
+
+The `es-ca` locale, deprecated since Zammad 7.0 in favour of the correct code `ca`, is no longer
+offered for selection. Users still set to it are migrated to `ca` automatically. Knowledge Base locales
+referencing `es-ca` are left untouched, because changing the locale of a Knowledge Base changes its
+public URLs.
+
+⚠️ Migrate a Knowledge Base that still uses the deprecated locale manually:
+
+```ruby
+zammad run rails r "KnowledgeBase::Locale.find_by(system_locale: Locale.find_by(locale: 'es-ca'))&.update!(system_locale: Locale.find_by(locale: 'ca'))"
+```
+
+**Related issue:** [#5886](https://github.com/zammad/zammad/issues/5886)
+
+### The default Content-Security-Policy became stricter
+
+**Who is affected?** Setups that embed the Zammad web interface in an `<iframe>` on a different origin.
+
+A `frame-ancestors 'self'` directive was added to the default `Content-Security-Policy` response
+header. Setups that previously re-enabled embedding by overriding the `X-Frame-Options` header at the
+reverse proxy are blocked again by it.
+
+⚠️ To allow embedding from trusted origins, adjust the `frame-ancestors` directive of the
+`Content-Security-Policy` response header at the reverse proxy as well.
+
+**Related issue:** [#6087](https://github.com/zammad/zammad/issues/6087)
+
 ## 7.1
 
-### Elasticsearch 7 deprecated
+### `X-Forwarded-Proto` takes precedence over `X-Forwarded-Scheme`
 
-Elasticsearch 7 has reached end of life and is now deprecated.
+**Who is affected?** Admins running Zammad behind a reverse proxy that terminates TLS and reports the
+request scheme via the `X-Forwarded-Scheme` header only, such as Nginx Proxy Manager.
 
-⚠️ A future version of Zammad now requires **Elasticsearch 8** or later.
+Zammad was updated from Rack 2 to Rack 3, which changed which header decides whether a request is
+seen as HTTPS: Rack 2 evaluated `X-Forwarded-Scheme` first, Rack 3 evaluates `X-Forwarded-Proto`
+first. Zammad's own nginx configuration sets `X-Forwarded-Proto` from the scheme of the connection it
+receives, in the Docker images via the `NGINX_SERVER_SCHEME` variable, which defaults to `$scheme`.
+Behind a proxy that terminates TLS and forwards plain HTTP, that value is `http`, so such requests
+are now seen as plain HTTP even though the proxy reported `X-Forwarded-Scheme: https`.
 
-### Calendar iCal feed must be a URL
+With the `http_type` setting set to `https`, the session cookie is marked `Secure`, and a `Secure`
+cookie is not written on a request that is seen as plain HTTP. No session is created at all, and
+logging in fails with "CSRF token verification failed!". Sessions that already hold a cookie keep
+working, so the problem only surfaces after a logout.
 
-Calendars can no longer be configured with a local file path as the iCal feed source. Only HTTP/HTTPS URLs are accepted.
+⚠️ Configure the scheme in Zammad's own web server rather than in the proxy in front of it, whose
+`X-Forwarded-Proto` header is overwritten: set `NGINX_SERVER_SCHEME=https` for the Docker images, or
+the `X-Forwarded-Proto` line in the nginx configuration file.
 
-Local file path support is now deprecated. In a future release of Zammad, this functionality will be removed.
+**Related issue:** [#6305](https://github.com/zammad/zammad/issues/6305)
 
-⚠️ If you previously used a local `.ics`
-file path, host the file on an HTTP server and update the calendar's iCal feed URL accordingly.
+### Elasticsearch 7 was deprecated
 
-### Exceptions::UnprocessableEntity error is deprecated in favor of Exceptions::UnprocessableContent
+**Who is affected?** Admins of systems that run Elasticsearch 7.
 
-Exceptions::UnprocessableEntity will be removed in Zammad 8.0
+Elasticsearch 7 has reached its end of life and was deprecated with this release. It is still
+supported in Zammad 7.1, but a later release requires **Elasticsearch 8** or later.
+
+⚠️ Plan the upgrade of the Elasticsearch installation to version 8 or later.
+
+**Related issue:** [#6314](https://github.com/zammad/zammad/issues/6314)
+
+### `Exceptions::UnprocessableEntity` was deprecated in favour of `Exceptions::UnprocessableContent`
+
+**Who is affected?** Developers of custom packages, patches or add-ons that reference
+`Exceptions::UnprocessableEntity`.
+
+The exception was renamed to `Exceptions::UnprocessableContent`, following the rename of the HTTP
+status code itself. The old constant still resolves, but it is deprecated and emits a deprecation
+warning.
+
+⚠️ Replace references to `Exceptions::UnprocessableEntity` with `Exceptions::UnprocessableContent`.
+
+**Related issue:** [#6198](https://github.com/zammad/zammad/issues/6198)
 
 ## 7.0
 
-### MySQL support removed, database related application settings deprecated
+### MySQL support was removed and database-related settings were deprecated
 
-After a long period of deprecation, support for the MySQL database was removed.
-Any systems still running on MySQL need to be migrated to PostgreSQL
-_before updating to Zammad 7.0_.
+**Who is affected?** Admins of instances still running on MySQL or MariaDB, and developers of custom
+packages that read database preferences from the Rails configuration.
 
-The following configuration values are now deprecated and will be removed with Zammad 8.0:
+After a long period of deprecation, support for the MySQL and MariaDB databases was removed —
+PostgreSQL is the only supported database. Alongside, the following configuration values were
+deprecated and will be removed with Zammad 8.0:
 
 - `Rails.application.config.db_null_byte`
 - `Rails.application.config.db_case_sensitive`
 - `Rails.application.config.db_like`
 - `Rails.application.config.db_column_array`
 
-### Fulltext search is now asciifolding
+⚠️ Migrate a MySQL or MariaDB installation to PostgreSQL _before_ updating to Zammad 7.0, following the
+[migration documentation](https://docs.zammad.org/en/latest/appendix/migrate-to-postgresql.html).
 
-The global search, as well as other fulltext searches, are now [asciifolding](https://github.com/zammad/zammad/pull/5536).
-To enable this behaviour, it is needed to rebuild the search index:
+**Related issue:** [#5580](https://github.com/zammad/zammad/issues/5580)
 
-`zammad run rake zammad:searchindex:rebuild`
+### Fulltext search ignores diacritics by default
 
-If the behaviour is unwanted then it also can be disabled and no rebuild is needed:
+**Who is affected?** Admins of systems with Elasticsearch enabled, especially those who rely on
+searches matching diacritics exactly.
 
+The global search and other fulltext searches now use the Elasticsearch
+[asciifolding](https://github.com/zammad/zammad/pull/5537) analyzer, which is enabled by default:
+searching for `Munchen` matches `München` and vice versa. With the analyzer disabled, searching for
+`Munchen` does not match `München`.
+
+The new behaviour only applies to a rebuilt search index. To keep the previous behaviour instead,
+disable the `es_asciifolding` setting — no rebuild is needed in that case:
 `zammad run rails r "Setting.set('es_asciifolding', false)"`
-
-Example for asciifolding searches:
-
-**enabled (new default)**: Searching for `Munchen` will match `München`.
-
-**disabled**: Searching for `Munchen` will not match `München`.
 
 Thanks to [Jano Suchal](https://github.com/jsuchal) for the contribution.
 
-### nginx configuration update
+⚠️ Rebuild the search index after the update: `zammad run rake zammad:searchindex:rebuild`
 
-Please update your nginx configuration file to insert the line `proxy_http_version 1.1;` to the `location /`
-section like in the example below:
+**Related issue:** [#3782](https://github.com/zammad/zammad/issues/3782)
+
+### nginx configuration requires `proxy_http_version 1.1`
+
+**Who is affected?** Admins of installations that use an nginx reverse proxy with a configuration file
+from an earlier Zammad version.
+
+The nginx configuration shipped with Zammad sets `proxy_http_version 1.1;` for the main location as
+well, so that all proxied requests use HTTP/1.1 like the websocket and cable locations already did.
+Existing configuration files are not changed by the update.
+
+⚠️ Add the line to the `location /` section of the nginx configuration:
 
 ```diff
    location / {
@@ -66,40 +410,62 @@ section like in the example below:
      proxy_set_header Host $http_host;
 ```
 
-### Disallow assigning the same organization as primary and secondary
+**Related issue:** [#6317](https://github.com/zammad/zammad/issues/6317)
 
-It is no longer allowed for the same organization to be assigned as both a primary and a
-secondary organization of a user. An automatic migration makes sure the user data is in a consistent
-state after the update.
+### Assigning the same organization as primary and secondary is no longer allowed
 
-⚠️ Before upgrading, ensure that no calls to the API are used that try to put users in this invalid state.
-User records cannot have the same organization set as both primary and secondary anymore, and trying to
-do this will now result in an API error.
+**Who is affected?** Integrations that write user records via API and set the same organization as both
+primary and secondary organization.
 
-### Catalan locale change
+The same organization can no longer be a user's primary and secondary organization at the same time.
+Such requests now fail with a validation error, and an automatic migration brings existing user data
+into a consistent state during the update.
 
-The previously available Catalan locale used a wrong internal locale code and was deprecated. There is now a
-new Catalan locale with the correct code "ca". The deprecated locale will be removed in a future release of Zammad.
-An automatic update will switch the language preference of all Catalan user profiles to the new 'Catalan (Català)'
-locale during the migration.
+⚠️ Update API calls that put users into this state before updating.
 
-The following applies only in case you are already using Knowledge Base with Catalan language. Please note the
-deprecated Catalan locale will not be updated automatically. Changing the locale of a Knowledge Base causes a change in
-the public URLs. You can migrate Knowledge Base at your own pace by running the following command:
+**Related issue:** [#5254](https://github.com/zammad/zammad/issues/5254)
+
+### The Catalan locale moved to the correct `ca` locale code
+
+**Who is affected?** Admins of instances with users using the Catalan locale, and especially those with
+a Catalan Knowledge Base.
+
+The previously available Catalan locale used the wrong internal locale code `es-ca` and was deprecated;
+it will be removed in a future release. A new Catalan locale with the correct code `ca` is available,
+and a migration switches the language preference of all Catalan user profiles to the new
+"Catalan (Català)" locale.
+
+Knowledge Base locales are not migrated automatically, because changing the locale of a Knowledge Base
+changes its public URLs.
+
+⚠️ Migrate a Knowledge Base using the Catalan language at your own pace:
 
 ```ruby
 zammad run rails r "KnowledgeBase::Locale.find_by(system_locale: Locale.find_by(locale: 'es-ca'))&.update!(system_locale: Locale.find_by(locale: 'ca'))"
 ```
 
-### Slack integration removed
+**Related issue:** [#5886](https://github.com/zammad/zammad/issues/5886)
 
-The slack integration was remved from the codebase. It is recommended that you
-[switch to pre-built webhooks instead](https://admin-docs.zammad.org/en/latest/manage/webhook/examples/slack-notifications.html).
-Existing Slack integrations should be migrated manually, if not already done.
+### The Slack integration was removed
 
-### Twitter integration removed
+**Who is affected?** Admins of instances that still use the Slack integration.
 
-The Twitter integration was removed due to problems with API licensing. There is no replacement available.
+The Slack integration was removed from the codebase; existing configurations stop working and are not
+migrated automatically. Everything the integration did can be achieved with webhooks, see
+[Slack notifications via webhook](https://admin-docs.zammad.org/en/latest/manage/webhook/examples/slack-notifications.html).
+
+⚠️ Recreate existing Slack notifications as webhooks, if not already done.
+
+**Related issue:** [#5583](https://github.com/zammad/zammad/issues/5583)
+
+### The Twitter integration was removed
+
+**Who is affected?** Admins of instances that still have a Twitter/X channel configured.
+
+The Twitter integration was removed due to problems with the API licensing, and there is no replacement
+available. Existing tickets and articles stay accessible, but no messages are fetched or sent any more.
+
+**Related issue:** [#5581](https://github.com/zammad/zammad/issues/5581)
 
 ## 6.5.2
 

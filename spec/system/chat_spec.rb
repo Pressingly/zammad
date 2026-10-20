@@ -20,15 +20,60 @@ RSpec.describe 'Chat Handling', type: :system do
     end
   end
 
+  # Chat.coffee's switch() decides whether to auto-activate the (single, seeded)
+  #   chat topic or show a "select at least one chat topic" modal based on
+  #   App.Chat.count() - if that collection hasn't finished its async load yet
+  #   right after a page visit, count() is transiently 0 and the wrong modal
+  #   appears, blocking whatever click follows.
+  def wait_for_chat_topics_loaded
+    wait.until { page.evaluate_script('App.Chat.count()') > 0 }
+  end
+
   def enable_agent_chat
+    wait_for_chat_topics_loaded
+
     click agent_chat_switch_selector
+    wait_for_agent_chat_active
     click 'a[href="#customer_chat"]'
   end
 
-  def open_chat_dialog
+  # The widget asks for the agent availability right on load and removes itself
+  #   when the switch has not reached the server yet.
+  def wait_for_agent_chat_active
+    wait.until { Chat.active_agent_count(Chat.pluck(:id)).positive? }
+  end
+
+  # The demo pages give up waiting for an agent after six seconds. An accept
+  #   arriving just before is closed again by the customer, the agent window
+  #   goes offline and ChatWindow#sendMessage drops the message.
+  def keep_customer_waiting
+    page.execute_script(<<~JS)
+      chat.options.waitingListTimeout = 10;
+      chat.waitingListTimeout.options.timeout = 10;
+    JS
+  end
+
+  # The accept button is always present in the DOM, but Chat.coffee only marks
+  #   it with .is-active once the agent has been notified of the waiting
+  #   customer.
+  def accept_chat
+    click '.active .js-acceptChat.is-active'
+  end
+
+  def open_chat_dialog(keep_waiting: true)
     expect(page).to have_css('.zammad-chat')
+    keep_customer_waiting if keep_waiting
     click '.zammad-chat .js-chat-open'
     expect(page).to have_css('.zammad-chat-is-shown')
+  end
+
+  # Closing the chat widget reconnects its websocket (onCloseAnimationEnd ->
+  #   io.reconnect()), but the widget's Io#send passes messages to ws.send
+  #   without checking readyState - a chat_session_init fired while the new
+  #   socket is still connecting is lost for good and no agent ever gets
+  #   notified. Wait for the reconnect to finish before reopening the dialog.
+  def wait_for_widget_websocket_open
+    wait.until { page.evaluate_script('chat.io.ws.readyState') == 1 }
   end
 
   def send_customer_message(message)
@@ -37,25 +82,41 @@ RSpec.describe 'Chat Handling', type: :system do
   end
 
   def send_agent_message(message)
-    input = find('.active .chat-window .js-customerChatInput')
-    input.send_keys(message)
-    # Work around an obsure bug of send_keys sometimes not working on Firefox headless.
-    if input.text != message
-      input.execute_script("this.textContent = '#{message}'")
+    find('.active .chat-window .js-customerChatInput').send_keys(message)
+
+    # Wait until the message is verifiably present in the input before clicking
+    #   send, because ChatWindow#sendMessage silently sends nothing when the
+    #   input is empty at the time of the click.
+    #   send_keys sometimes fails to type into the contenteditable input at all
+    #   (observed on Firefox headless, but not provably limited to it) - that is
+    #   a failure of the test tooling, not product behavior, so set the text
+    #   directly in that case regardless of the driver.
+    wait.until do
+      input = find('.active .chat-window .js-customerChatInput')
+      input.execute_script('this.textContent = arguments[0]', message) if input.text != message
+      input.text == message
     end
+
+    # The send is deliberately clicked only once: a message that gets lost
+    #   although it was present in the input is a product bug that has to
+    #   surface here instead of being papered over by retyping and resending.
+    expect(page).to have_no_css('.active .chat-window.is-offline')
     click '.active .chat-window .js-send'
+    expect(page).to have_css('.active .chat-window .chat-message--agent', text: message)
   end
 
   shared_examples 'chat button is hidden after idle timeout' do
     it 'check that button is hidden after idle timeout', authenticated_as: :authenticate do
+      wait_for_chat_topics_loaded
       click agent_chat_switch_selector
+      wait_for_agent_chat_active
 
       using_session :customer do
         visit chat_url
 
         expect(page).to have_css('.zammad-chat', visible: :all)
         expect(page).to have_css('.zammad-chat-is-hidden', visible: :all)
-        expect(page).to have_no_css('.open-zammad-chat:not([style*="display: none"]', visible: :all)
+        expect(page).to have_no_css('.open-zammad-chat:not([style*="display: none"])', visible: :all)
       end
     end
   end
@@ -69,8 +130,12 @@ RSpec.describe 'Chat Handling', type: :system do
         open_chat_dialog
       end
 
-      click '.active .js-acceptChat'
+      accept_chat
 
+      # Wait for the chat window to render after accepting before checking its content.
+      # have_no_css passes immediately when the window hasn't rendered yet, so check
+      # for presence first to avoid a false-positive synchronisation point.
+      expect(page).to have_css('.active .chat-window .js-body')
       expect(page).to have_no_css('.active .chat-window .chat-status.is-modified')
       check_content('.active .chat-window .js-body', chat_url)
 
@@ -106,8 +171,11 @@ RSpec.describe 'Chat Handling', type: :system do
         open_chat_dialog
       end
 
-      click '.active .js-acceptChat'
+      accept_chat
 
+      # Same false-positive risk as in the agent-side test: have_no_css passes
+      # immediately before the window renders, so wait for the body first.
+      expect(page).to have_css('.active .chat-window .js-body')
       expect(page).to have_no_css('.active .chat-window .chat-status.is-modified')
 
       # Keep focus outside of chat window to check .chat-status.is-modified later.
@@ -142,11 +210,14 @@ RSpec.describe 'Chat Handling', type: :system do
 
         expect(page).to have_no_css('.zammad-chat-is-open')
 
+        wait_for_widget_websocket_open
+
         open_chat_dialog
       end
 
-      click '.active .js-acceptChat'
+      accept_chat
 
+      expect(page).to have_css('.active .chat-window .js-body')
       expect(page).to have_css('.active .chat-window .chat-status')
     end
   end
@@ -163,7 +234,8 @@ RSpec.describe 'Chat Handling', type: :system do
         expect(page).to have_no_css('.zammad-chat-is-shown', visible: :all)
         expect(page).to have_no_css('.zammad-chat-is-open', visible: :all)
 
-        click '.open-zammad-chat'
+        # The button only gets its click handler once the widget knows an agent is online.
+        click '.open-zammad-chat:not(.is-inactive)'
 
         expect(page).to have_css('.zammad-chat-is-shown', visible: :all)
         expect(page).to have_css('.zammad-chat-is-open', visible: :all)
@@ -193,7 +265,7 @@ RSpec.describe 'Chat Handling', type: :system do
         refresh
 
         # No agent action, show sorry screen.
-        open_chat_dialog
+        open_chat_dialog(keep_waiting: false)
 
         check_content('.zammad-chat-modal-text', %r{(waiting|Warte)})
         check_content('.zammad-chat-modal-text', %r{(taking longer|dauert länger)})
@@ -204,7 +276,7 @@ RSpec.describe 'Chat Handling', type: :system do
         open_chat_dialog
       end
 
-      click '.active .js-acceptChat'
+      accept_chat
 
       send_agent_message('agent is asking')
 
@@ -224,7 +296,7 @@ RSpec.describe 'Chat Handling', type: :system do
         open_chat_dialog
       end
 
-      click '.active .js-acceptChat'
+      accept_chat
 
       send_agent_message('my name is me')
 
@@ -262,8 +334,7 @@ RSpec.describe 'Chat Handling', type: :system do
         check_content('.settings', '{"event":"chat_status_customer","data":{"state":"offline"}}')
       end
 
-      click agent_chat_switch_selector
-      click 'a[href="#customer_chat"]'
+      enable_agent_chat
 
       using_session :customer do
 
@@ -312,7 +383,7 @@ RSpec.describe 'Chat Handling', type: :system do
         open_chat_dialog
       end
 
-      click '.active .js-acceptChat'
+      accept_chat
 
       expect(page).to have_css('.active .chat-window .chat-status')
 
@@ -328,7 +399,9 @@ RSpec.describe 'Chat Handling', type: :system do
 
         refresh
 
-        expect(page).to have_css('.zammad-chat')
+        # After a page refresh the chat session reconnects automatically via
+        # WebSocket. The content checks below already wait for the element, so
+        # the standalone existence assertion is redundant and can race in CI.
         check_content('.zammad-chat', %r{(Hi Stranger|My Greeting)})
         check_content('.zammad-chat', 'my name is me')
 
@@ -336,6 +409,32 @@ RSpec.describe 'Chat Handling', type: :system do
       end
 
       check_content('.active .chat-window .js-body', "#{chat_url}#new_hash")
+
+      # Close the conversation instead of leaving it active - otherwise the customer
+      #   session gets torn down mid-chat by the after-each hook (rather than a clean
+      #   UI close), which can leave the conversation looking still active server-side
+      #   and intermittently block a later test's chat interactions with a stray modal.
+      using_session :customer do
+        click '.js-chat-toggle .zammad-chat-header-icon'
+      end
+
+      check_content('.active .chat-window', 'closed the conversation')
+    end
+  end
+
+  context 'when hovering over the active agents info' do
+    it 'shows the avatar of the active agent', authenticated_as: :authenticate do
+      visit '/'
+
+      enable_agent_chat
+
+      expect(page).to have_css('.active .js-activeAgents .js-badgeActiveAgents', text: '1')
+
+      find('.active .js-activeAgents .js-info').hover
+
+      # The avatar is positioned via an inline style - Bootstrap's popover sanitizer
+      #   strips that attribute unless sanitizing is disabled, leaving a blank avatar.
+      expect(page).to have_css('.popover .userList-entry .avatar[style]')
     end
   end
 
@@ -380,7 +479,9 @@ RSpec.describe 'Chat Handling', type: :system do
   describe "Chat can't be closed after timeout #2471", authenticated_as: :authenticate do
     shared_examples 'test issue #2471' do
       it 'is able to close to the dialog after a idleTimeout happened' do
+        wait_for_chat_topics_loaded
         click agent_chat_switch_selector
+        wait_for_agent_chat_active
         using_session :customer do
 
           visit chat_url

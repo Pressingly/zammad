@@ -1,5 +1,8 @@
 // Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
+import { omit } from 'lodash-es'
+import { stringifyQuery } from 'vue-router'
+
 import { TicketTaskbarTabAttributesFragmentDoc } from '#shared/entities/ticket/graphql/fragments/ticketTaskbarTabAttributes.api.ts'
 import { EnumTaskbarEntity, type UserTaskbarItemEntitySearch } from '#shared/graphql/types.ts'
 
@@ -15,19 +18,22 @@ export default <UserTaskbarTabPlugin>{
   entityType,
   entityDocument: TicketTaskbarTabAttributesFragmentDoc,
   buildEntityTabKey: () => entityType,
-  buildTaskbarTabEntityId: () => undefined,
   buildTaskbarTabParams: (route) => ({
     query: route.params.searchTerm,
     model: route.query.entity,
+    filters: stringifyQuery(omit(route.query, ['entity'])),
   }),
   buildTaskbarTabLink: (entity: UserTaskbarItemEntitySearch) => {
-    const { query, model } = entity
+    const { query, model, filters } = entity
 
     let url = '/search'
     if (query) url += `/${query}`
     if (model) url += `?entity=${model}`
+    if (filters) {
+      url += `${model ? '&' : '?'}${filters}`
+    }
 
     return encodeURI(url)
   },
-  confirmTabRemove: false,
+  confirmTabRemove: true,
 }

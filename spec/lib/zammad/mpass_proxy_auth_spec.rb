@@ -3,7 +3,7 @@
 require 'rails_helper'
 
 RSpec.describe Zammad::MpassProxyAuth do
-  let(:app)        { double('app') } # rubocop:disable RSpec/VerifiedDoubles
+  let(:app)         { double('app') } # rubocop:disable RSpec/VerifiedDoubles
   let(:middleware)  { described_class.new(app) }
   let(:session)     { {} }
   let(:env) do
@@ -31,7 +31,7 @@ RSpec.describe Zammad::MpassProxyAuth do
     context 'when email header contains a full email' do
       before { env['HTTP_X_AUTH_REQUEST_EMAIL'] = 'test.user@arbisoft.com' }
 
-      it 'creates a user and establishes a session' do
+      it 'creates a user and establishes a session', :aggregate_failures do
         middleware.call(env)
 
         user = User.find_by(login: 'test.user@arbisoft.com')
@@ -41,7 +41,7 @@ RSpec.describe Zammad::MpassProxyAuth do
         expect(session[:authentication_type]).to eq('SSO')
       end
 
-      it 'assigns the signup role, never Agent, regardless of email domain' do
+      it 'assigns the signup role, never Agent, regardless of email domain', :aggregate_failures do
         middleware.call(env)
 
         user = User.find_by(login: 'test.user@arbisoft.com')
@@ -86,7 +86,7 @@ RSpec.describe Zammad::MpassProxyAuth do
         session[:user_id] = user.id
       end
 
-      it 'passes through without re-establishing session' do
+      it 'passes through without re-establishing session', :aggregate_failures do
         middleware.call(env)
 
         expect(app).to have_received(:call)
@@ -117,9 +117,10 @@ RSpec.describe Zammad::MpassProxyAuth do
     end
 
     context 'when user is inactive' do
-      let!(:user) { create(:agent, login: 'inactive@arbisoft.com', email: 'inactive@arbisoft.com', active: false) }
-
-      before { env['HTTP_X_AUTH_REQUEST_EMAIL'] = 'inactive@arbisoft.com' }
+      before do
+        create(:agent, login: 'inactive@arbisoft.com', email: 'inactive@arbisoft.com', active: false)
+        env['HTTP_X_AUTH_REQUEST_EMAIL'] = 'inactive@arbisoft.com'
+      end
 
       it 'returns 403' do
         status, _headers, _body = middleware.call(env)
@@ -127,12 +128,12 @@ RSpec.describe Zammad::MpassProxyAuth do
       end
     end
 
-    context 'regardless of DEFAULT_EMAIL_DOMAIN' do
+    context 'with an email outside DEFAULT_EMAIL_DOMAIN' do
       before do
         env['HTTP_X_AUTH_REQUEST_EMAIL'] = 'external@gmail.com'
       end
 
-      it 'assigns signup role (Customer) instead of Agent' do
+      it 'assigns signup role (Customer) instead of Agent', :aggregate_failures do
         middleware.call(env)
 
         user = User.find_by(login: 'external@gmail.com')
@@ -146,7 +147,7 @@ RSpec.describe Zammad::MpassProxyAuth do
 
       before { env['HTTP_X_AUTH_REQUEST_EMAIL'] = 'promoted@arbisoft.com' }
 
-      it 'never auto-promotes to Agent' do
+      it 'never auto-promotes to Agent', :aggregate_failures do
         expect(customer.role?('Agent')).to be(false)
 
         middleware.call(env)
@@ -162,9 +163,8 @@ RSpec.describe Zammad::MpassProxyAuth do
     end
 
     context 'when maintenance mode is enabled' do
-      let!(:agent) { create(:agent, login: 'maint.agent@arbisoft.com', email: 'maint.agent@arbisoft.com') }
-
       before do
+        create(:agent, login: 'maint.agent@arbisoft.com', email: 'maint.agent@arbisoft.com')
         Setting.set('maintenance_mode', true)
         env['HTTP_X_AUTH_REQUEST_EMAIL'] = 'maint.agent@arbisoft.com'
       end

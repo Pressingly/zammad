@@ -3,13 +3,17 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, shallowRef, useTemplateRef, unref } from 'vue'
 
+import { useReducedMotion } from '#shared/composables/useReducedMotion.ts'
 import { useAiAnalyticsUsageMutation } from '#shared/graphql/mutations/aiAnalyticsUsage.api.ts'
 import type { AiAnalyticsMetadata, AiAnalyticsUsageInput } from '#shared/graphql/types.ts'
 import { MutationHandler } from '#shared/server/apollo/handler/index.ts'
+import { GraphQLErrorTypes } from '#shared/types/error.ts'
 import type { DeepPartial } from '#shared/types/utils.ts'
 
 import type { UiState } from '#desktop/components/CommonAIFeedback/types.ts'
 import CommonButton from '#desktop/components/CommonButton/CommonButton.vue'
+
+import type { ApolloError } from '@apollo/client/core'
 
 interface Props {
   analyticsMeta: DeepPartial<AiAnalyticsMetadata>
@@ -25,7 +29,9 @@ const uiState = shallowRef<UiState>('idle')
 const comment = shallowRef('')
 const commentFieldElement = useTemplateRef('comment-field')
 
-const usageMutation = new MutationHandler(useAiAnalyticsUsageMutation())
+const usageMutation = new MutationHandler(useAiAnalyticsUsageMutation(), {
+  errorCallback: (error) => error.type !== GraphQLErrorTypes.AiFeedbackAlreadyProvided,
+})
 const loading = usageMutation.loading()
 
 const runId = computed(() => props.analyticsMeta?.run?.id)
@@ -36,27 +42,51 @@ const submitUsage = async (input: AiAnalyticsUsageInput) => {
   await usageMutation.send({ aiAnalyticsRunId: runId.value, input })
 }
 
+// Feedback may have been given meanwhile in another view of the same result.
+const isFeedbackAlreadyProvided = (error: unknown) =>
+  (error as ApolloError)?.graphQLErrors?.[0]?.extensions?.type ===
+  GraphQLErrorTypes.AiFeedbackAlreadyProvided
+
+const submitFeedback = async (input: AiAnalyticsUsageInput) => {
+  try {
+    await submitUsage(input)
+    return true
+  } catch (error) {
+    if (!isFeedbackAlreadyProvided(error)) throw error
+
+    uiState.value = 'success'
+    return false
+  }
+}
+
 const submitPositiveFeedback = async () => {
-  await submitUsage({ rating: true })
+  await submitFeedback({ rating: true })
   uiState.value = 'success'
   emit('rated')
 }
 
+const { scrollBehavior } = useReducedMotion()
+
 const submitNegativeFeedback = async () => {
-  await submitUsage({ rating: false })
-  uiState.value = 'comment'
+  const recorded = await submitFeedback({ rating: false })
   emit('rated')
+  if (!recorded) return
+
+  uiState.value = 'comment'
   await nextTick()
 
   const commentContainer = unref(commentFieldElement)
   const textarea = commentContainer!.querySelector('textarea') as HTMLTextAreaElement
 
-  textarea.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  textarea.scrollIntoView({
+    behavior: scrollBehavior.value,
+    block: 'nearest',
+  })
   textarea.focus()
 }
 
 const submitComment = async () => {
-  await submitUsage({ comment: comment.value })
+  await submitFeedback({ comment: comment.value })
   uiState.value = 'success'
 }
 

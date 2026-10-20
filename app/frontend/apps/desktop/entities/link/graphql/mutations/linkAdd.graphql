@@ -1,0 +1,27 @@
+mutation linkAdd($input: LinkInput!) {
+  linkAdd(input: $input) {
+    link {
+      type
+      item {
+        __typename
+        ... on Ticket {
+          id
+          internalId
+          title
+          state {
+            id
+            name
+          }
+          stateColorCode
+        }
+        ... on KnowledgeBaseAnswerTranslation {
+          ...knowledgeBaseAnswerTranslation
+        }
+      }
+    }
+    errors {
+      message
+      field
+    }
+  }
+}

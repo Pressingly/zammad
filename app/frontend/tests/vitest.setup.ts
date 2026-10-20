@@ -10,6 +10,7 @@ import { expect, vi } from 'vitest'
 import { ServiceWorkerHelper } from '#shared/utils/testSw.ts'
 
 import * as assertions from './support/assertions/index.ts'
+import { ClipboardItemMock } from './support/mocks/clipboardItem.ts'
 
 import type { TestingLibraryMatchers } from '@testing-library/jest-dom/matchers'
 
@@ -22,13 +23,33 @@ vi.hoisted(() => {
   globalThis.__ = (source) => {
     return source
   }
+
+  // jsdom 30 generates the `CSS` namespace as a branded interface, so its
+  // `escape()` throws "'escape' called on an object that is not a valid
+  // instance of CSS" when called detached. The `css.escape` package (used by
+  // @testing-library/jest-dom's `toHaveFormValues`) captures `CSS.escape`
+  // unbound at import time, so bind it before any import can grab it – hence
+  // the hoisted block.
+  const { CSS } = globalThis
+  if (typeof CSS?.escape === 'function') {
+    CSS.escape = CSS.escape.bind(CSS)
+  }
+
+  // Suppress Apollo's devtools-suggestion timer. The timer fires 10 s after
+  // ApolloClient construction; if the jsdom environment is torn down first,
+  // the callback throws "ReferenceError: window is not defined". Setting
+  // __DEV__ = false makes Apollo skip the timer entirely (see connectToDevTools
+  // in @apollo/client/core). loadDevMessages/loadErrorMessages are unaffected.
+  ;(globalThis as any).__DEV__ = false
 })
 
 window.sw = new ServiceWorkerHelper()
 
 configure({
   testIdAttribute: 'data-test-id',
-  asyncUtilTimeout: process.env.CI ? 30_000 : 1_000,
+  // Must stay below the outer `testTimeout` (vite.config.mjs) with real margin — see
+  // tests/support/vitest-wrapper.ts for why equal values cause misleading failures.
+  asyncUtilTimeout: process.env.CI ? 20_000 : 1_000,
 })
 
 Object.defineProperty(window, 'fetch', {
@@ -69,6 +90,7 @@ Object.defineProperty(Node.prototype, 'getClientRects', {
 Object.defineProperty(Element.prototype, 'scroll', { value: vi.fn() })
 Object.defineProperty(Element.prototype, 'scrollBy', { value: vi.fn() })
 Object.defineProperty(Element.prototype, 'scrollIntoView', { value: vi.fn() })
+Object.defineProperty(Element.prototype, 'scrollTo', { value: vi.fn() })
 
 const descriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src')!
 
@@ -112,21 +134,13 @@ const IntersectionObserverMock = vi.fn(function () {
 globalThis.IntersectionObserver = IntersectionObserverMock as any
 
 // Mock ClipboardItem class by injecting it into the global namespace.
-globalThis.ClipboardItem = class {
-  constructor(
-    private data: Record<string, Blob | string | Promise<Blob | string>>,
-    private options: { presentationStyle: 'unspecified' | 'inline' | 'attachment' } = {
-      presentationStyle: 'unspecified',
-    },
-  ) {}
-} as any
+globalThis.ClipboardItem = ClipboardItemMock as any
 
 require.extensions['.css'] = () => ({})
 
-globalThis.requestAnimationFrame = (cb) => {
-  setTimeout(cb, 0)
-  return 0
-}
+globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0)
+
+globalThis.cancelAnimationFrame = (id) => clearTimeout(id)
 
 globalThis.scrollTo = vi.fn()
 globalThis.matchMedia = (media: string) => ({
@@ -287,9 +301,6 @@ expect.extend({
     return (toBeDisabled as any).call(this, received, ...args)
   },
 })
-
-process.on('uncaughtException', (e) => console.log('Uncaught Exception', e))
-process.on('unhandledRejection', (e) => console.log('Unhandled Rejection', e))
 
 declare module 'vitest' {
   interface TestContext {

@@ -5,6 +5,8 @@
 - Test at the **lowest level** possible — unit over request over E2E
 - Focus on the object under test, mock dependencies where it makes sense
 - Only important user stories get E2E/system tests (Capybara + Selenium)
+- Service specs cover behavior, GraphQL specs only the GraphQL layer —
+  see `.dev/agent_docs/testing_services_and_graphql.md`
 
 ## Backend (RSpec)
 
@@ -28,6 +30,15 @@ but omit it when frontend files have changed.
   outside of `spec/jobs/`
 - `db_strategy: :reset` — reset database after examples that modify
   the schema
+
+### System tests (Capybara + Selenium)
+
+Set `SELENIUM_BROWSER_HEADLESS=1` when running system specs — otherwise
+Selenium opens a real, visible browser window.
+
+```bash
+SELENIUM_BROWSER_HEADLESS=1 RAILS_ENV=test VITE_TEST_MODE=1 bundle exec rspec spec/system/path/to/file_spec.rb
+```
 
 ### Capybara form helpers (new frontend stack)
 
@@ -68,11 +79,15 @@ Full reference:
 Test files use `.spec.ts` extension and are co-located with source files.
 
 ```bash
-VITE_TEST_MODE=1 pnpm test -- app/frontend/path/to/file.spec.ts
+pnpm test --run app/frontend/path/to/file.spec.ts
 ```
 
+Always pass `--run` and at least one file path. In an interactive terminal,
+watch mode is the default and does not exit. Never put `--` between `pnpm test` and the arguments: pnpm
+forwards it, Vitest then ignores everything after it and runs the complete
+suite. `VITE_TEST_MODE` is not needed, Vitest enables the test mode itself.
+
 Tests use **Testing Library** (on top of Vue Test Utils).
-Watch mode is the default.
 
 ### Two levels of frontend tests
 

@@ -20,15 +20,17 @@ import QueryHandler from '#shared/server/apollo/handler/QueryHandler.ts'
 import CommonLoader from '#desktop/components/CommonLoader/CommonLoader.vue'
 import type { MenuItem } from '#desktop/components/CommonPopoverMenu/types.ts'
 import CommonSimpleTable from '#desktop/components/CommonTable/CommonSimpleTable.vue'
+import CommonTableSkeleton from '#desktop/components/CommonTable/Skeleton/CommonTableSkeleton.vue'
 import type { TableSimpleHeader, TableItem } from '#desktop/components/CommonTable/types.ts'
 import LayoutContent from '#desktop/components/layout/LayoutContent.vue'
 
 import { useBreadcrumb } from '../composables/useBreadcrumb.ts'
+import { usePersonalSettingTabs } from '../composables/usePersonalSettingTabs.ts'
 import { useUserCurrentDeviceDeleteMutation } from '../graphql/mutations/userCurrentDeviceDelete.api.ts'
 import { useUserCurrentDeviceListQuery } from '../graphql/queries/userCurrentDeviceList.api.ts'
 import { UserCurrentDevicesUpdatesDocument } from '../graphql/subscriptions/userCurrentDevicesUpdates.api.ts'
 
-const { breadcrumbItems } = useBreadcrumb(__('Devices'))
+const { breadcrumbItems } = useBreadcrumb()
 
 const { notify } = useNotifications()
 
@@ -132,16 +134,24 @@ const currentDevices = computed<TableItem[]>(() =>
 const helpText = computed(() =>
   i18n.t('All computers and browsers from which you logged in to Zammad appear here.'),
 )
+
+const { tabs, activeTab } = usePersonalSettingTabs()
 </script>
 
 <template>
   <LayoutContent
+    :active-tab="activeTab"
+    :tabs="tabs"
     :breadcrumb-items="breadcrumbItems"
     :help-text="helpText"
     width="narrow"
     provide-default
   >
-    <CommonLoader :loading="deviceListQueryLoading">
+    <CommonLoader class="w-full" :loading="deviceListQueryLoading">
+      <template #skeleton>
+        <CommonTableSkeleton :columns="3" :rows="5" has-actions />
+      </template>
+
       <div class="mb-4">
         <CommonSimpleTable
           :caption="$t('Used devices')"

@@ -3,14 +3,15 @@
 import type { FileUploaded } from '#shared/components/Form/fields/FieldFile/types.ts'
 import type { SecurityValue } from '#shared/components/Form/fields/FieldSecurity/types.ts'
 import type { FormFieldValue } from '#shared/components/Form/types.ts'
+import type { TaskbarLiveAppUser } from '#shared/entities/taskbar/types.ts'
 import type { TicketArticleFormValues } from '#shared/entities/ticket-article/action/plugins/types.ts'
 import {
-  type TicketQuery,
-  type TicketArticlesQuery,
-  type TicketLiveUser,
-  type TicketsCachedByOverviewQuery,
-  type EnumTaskbarApp,
   type EnumSecurityOption,
+  type EnumTicketStateColorCode,
+  type ReferencingTicketFragment,
+  type TicketArticlesQuery,
+  type TicketQuery,
+  type TicketsCachedByOverviewQuery,
 } from '#shared/graphql/types.ts'
 import type { ConfidentTake, PartialRequired } from '#shared/types/utils.ts'
 
@@ -30,13 +31,9 @@ export enum TicketCreateArticleType {
 
 export type TicketView = 'agent' | 'customer'
 
-export interface TicketLiveAppUser {
-  user: TicketLiveUser['user']
-  editing: boolean
-  lastInteraction?: string
-  app: EnumTaskbarApp
-  isIdle?: boolean
-}
+// Aliased rather than renamed at its 12 call sites, several of which are generic already (the user
+//   popovers render whatever live users they are handed). New code should use the shared name.
+export type TicketLiveAppUser = TaskbarLiveAppUser
 
 export type TicketById = TicketQuery['ticket']
 export type TicketByList = NonNullable<
@@ -44,6 +41,20 @@ export type TicketByList = NonNullable<
 >[number]['node']
 
 export type TicketArticle = ConfidentTake<TicketArticlesQuery, 'articles.edges.node'>
+
+export interface TicketLabel {
+  id?: string
+  internalId?: number
+  number?: number | string | null
+  title?: string | null
+  createdAt?: string | null
+  stateColorCode?: EnumTicketStateColorCode | null
+  state?: {
+    name?: string | null
+  } | null
+}
+
+export type ReferencingTicket = ReferencingTicketFragment
 
 export interface TicketCustomerUpdateFormData {
   customer_id: number

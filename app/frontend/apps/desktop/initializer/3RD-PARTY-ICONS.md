@@ -1,12 +1,16 @@
 # Third Party Icons (`desktop`)
 
+- `assets/archive-fill.svg`
 - `assets/arrow-left.svg`
 - `assets/arrow-right.svg`
 - `assets/arrow-bar-left.svg`
 - `assets/arrow-bar-right.svg`
+- `assets/arrow-clockwise.svg`
+- `assets/arrow-counterclockwise.svg`
 - `assets/arrow-repeat.svg`
 - `assets/arrows-collapse.svg`
 - `assets/arrows-expand.svg`
+- `assets/arrows-fullscreen.svg`
 - `assets/book.svg`
 - `assets/box-arrow-in-right.svg`
 - `assets/box-arrow-up-right.svg`
@@ -53,12 +57,15 @@
 - `assets/filter.svg`
 - `assets/forward.svg`
 - `assets/globe.svg`
+- `assets/grid.svg`
 - `assets/grip-vertical.svg`
 - `assets/image.svg`
 - `assets/info-circle.svg`
 - `assets/key.svg`
 - `assets/keyboard.svg`
+- `assets/lightbulb.svg`
 - `assets/lock.svg`
+- `assets/lock-fill.svg`
 - `assets/paperclip.svg`
 - `assets/patch-check.svg`
 - `assets/pencil-square.svg`
@@ -67,7 +74,10 @@
 - `assets/phone.svg`
 - `assets/pin-angle.svg`
 - `assets/pin.svg`
+- `assets/play-fill.svg`
+- `assets/plus.svg`
 - `assets/plus-circle.svg`
+- `assets/plus-square.svg`
 - `assets/printer.svg`
 - `assets/question-circle.svg`
 - `assets/quote.svg`
@@ -75,9 +85,11 @@
 - `assets/radio-yes.svg`
 - `assets/reply-all.svg`
 - `assets/reply.svg`
+- `assets/rss.svg`
 - `assets/search.svg`
 - `assets/shield-lock.svg`
 - `assets/sms.svg`
+- `assets/sort-alpha-down.svg`
 - `assets/speedometer2.svg`
 - `assets/spinner.svg`
 - `assets/square.svg`
@@ -99,6 +111,8 @@
 - `assets/x-circle.svg`
 - `assets/x-lg.svg`
 - `assets/x.svg`
+- `assets/zoom-in.svg`
+- `assets/zoom-out.svg`
   - Author: The Bootstrap Authors
   - License: MIT
   - URL: <https://github.com/twbs/icons>

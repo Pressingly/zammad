@@ -58,7 +58,7 @@ class TicketArticlesController < ApplicationController
         next if !authorized?(article, :show?)
 
         record_ids.push article.id
-        assets = article.assets({})
+        assets = article.assets(assets)
       end
       render json: {
         record_ids: record_ids,
@@ -88,7 +88,7 @@ class TicketArticlesController < ApplicationController
     end
 
     if response_full?
-      full = Ticket::Article.full(params[:id])
+      full = Ticket::Article.full(article.id)
       render json: full, status: :created
       return
     end

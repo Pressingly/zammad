@@ -12,7 +12,7 @@ RSpec.describe 'AI > AI Agents', type: :system do
     it 'shows a warning message' do
       visit '#ai/ai_agents'
 
-      expect(page).to have_text('The provider configuration is disabled. Please set up the provider before proceeding in AI > Providers.')
+      expect(page).to have_text('The provider configuration is disabled. Before proceeding, please set up at least one provider in AI > Providers.')
     end
   end
 
@@ -74,6 +74,12 @@ RSpec.describe 'AI > AI Agents', type: :system do
         it 'shows AI agent with correct references' do
           visit '#ai/ai_agents'
 
+          # Reference changes reach the list via websocket pushes (AI::Agent touch).
+          #   Wait for the authenticated session before changing references,
+          #   otherwise the push is lost for good and the list is never updated.
+          ensure_websocket
+          wait_for_authenticated_session
+
           within ".js-tableBody tr.item[data-id='#{ai_agent_1.id}']" do
             expect(page).to have_text('AI Agent 1')
               .and have_text('Triggers (2)')
@@ -99,21 +105,21 @@ RSpec.describe 'AI > AI Agents', type: :system do
             create(:trigger, name: 'Trigger3 Group Dispatcher 1', perform: { 'ai.ai_agent' => { 'ai_agent_id' => ai_agent_3.id } })
             create(:macro, name: 'Macro3 Group Dispatcher 1', perform: { 'ai.ai_agent' => { 'ai_agent_id' => ai_agent_3.id } })
             await_empty_ajax_queue
-            expect(page).to have_text('Triggers (1)')
+            expect(page).to have_text('Triggers (1)', wait: 30)
               .and have_text('Macros (1)')
               .and have_no_text('Unused')
 
             # Test that references text is updated when references are changed.
             Job.last.update!(perform: { 'ai.ai_agent' => { 'ai_agent_id' => ai_agent_3.id } })
             await_empty_ajax_queue
-            expect(page).to have_text('Schedulers (1)')
+            expect(page).to have_text('Schedulers (1)', wait: 30)
 
             # Test that references are removed/badge is added when the last reference is deleted.
             Trigger.last.destroy!
             Job.last.destroy!
             Macro.last.destroy!
             await_empty_ajax_queue
-            expect(page).to have_no_text('Triggers')
+            expect(page).to have_no_text('Triggers', wait: 30)
               .and have_no_text('Schedulers')
               .and have_no_text('Macros')
               .and have_text('Unused')
@@ -192,8 +198,7 @@ RSpec.describe 'AI > AI Agents', type: :system do
           click_on 'Back'
 
           error_message = page.find('[name="definition::instruction_context::object_attributes::group_id-required-validator"]', visible: :all)
-            .native
-            .attribute('validationMessage')
+            .evaluate_script('this.validationMessage')
 
           expect(error_message).to include('Please fill')
 

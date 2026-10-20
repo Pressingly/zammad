@@ -73,11 +73,11 @@ describe('User detail view: Delete user', () => {
     const view = await visitView('/users/2')
 
     const main = view.getByRole('main')
-    const header = within(main).getByTestId('user-detail-top-bar')
+    const header = within(main).getByTestId('user-detail-top-bar-full-details')
 
-    await view.events.click(within(header).getByRole('button', { name: 'Action menu button' }))
+    await view.events.click(within(header).getByRole('button', { name: 'Additional actions' }))
 
-    const popover = await view.findByRole('region', { name: 'Action menu button' })
+    const popover = await view.findByRole('region', { name: 'Additional actions' })
 
     await view.events.click(within(popover).getByRole('button', { name: 'Delete' }))
 

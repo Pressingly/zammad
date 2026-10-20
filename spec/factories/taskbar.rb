@@ -44,5 +44,31 @@ FactoryBot.define do
     trait :with_new_ticket do
       key { "TicketCreateScreen-#{Faker::Number.unique.number(digits: 5)}" }
     end
+
+    # A create screen has no record yet, so its key carries a UUID instead of an id, and the
+    #   locale of the draft rides in the params (one draft is one translation).
+    trait :with_new_knowledge_base_answer do
+      transient do
+        tab_id     { SecureRandom.uuid }
+        kb_locale  { 'en-us' }
+      end
+
+      key                      { "KnowledgeBaseAnswerCreateScreen-#{tab_id}" }
+      add_attribute(:callback) { 'KnowledgeBaseAnswerCreate' }
+      params                   { { id: tab_id, locale: kb_locale } }
+    end
+
+    # An answer is edited one translation at a time, so its edit tab carries the locale as the
+    #   qualifier of the answer's key - the answer stays the entity of the tab.
+    trait :with_knowledge_base_answer do
+      transient do
+        answer    { create(:knowledge_base_answer) } # rubocop:disable FactoryBot/FactoryAssociationWithStrategy
+        kb_locale { 'en-us' }
+      end
+
+      key                      { Taskbar.entity_key(answer, kb_locale) }
+      add_attribute(:callback) { 'KnowledgeBaseAnswerEdit' }
+      params                   { { answer_id: answer.id, locale: kb_locale } }
+    end
   end
 end

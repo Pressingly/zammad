@@ -17,7 +17,6 @@ import type { FormKitNode } from '@formkit/core'
 
 const wrapperParameters = {
   form: true,
-  formField: true,
   router: true,
   dialog: true,
   store: true,
@@ -71,11 +70,10 @@ describe('Form - Field - External Data Source - Query', () => {
 
     expect(wrapper.queryByText('Start typing to search…')).not.toBeInTheDocument()
 
-    const callResult = await waitUntil(
-      () =>
-        getGraphQLMockCalls<AutocompleteSearchObjectAttributeExternalDataSourceQuery>(
-          AutocompleteSearchObjectAttributeExternalDataSourceDocument,
-        ).at(-1)!,
+    const callResult = await waitUntil(() =>
+      getGraphQLMockCalls<AutocompleteSearchObjectAttributeExternalDataSourceQuery>(
+        AutocompleteSearchObjectAttributeExternalDataSourceDocument,
+      ).at(-1)!,
     )
 
     const testOptions = callResult.result.autocompleteSearchObjectAttributeExternalDataSource

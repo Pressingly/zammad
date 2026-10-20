@@ -1289,11 +1289,13 @@ RSpec.describe 'User', performs_jobs: true, type: :request do
 
           authenticated_as(admin, token:)
           get '/api/v1/users/me'
-          expect(UserInfo.current_token).to eq(token)
+          expect(UserInfo.current_token).to be_nil
+
+          allow(UserInfo).to receive(:current_token=).and_call_original
 
           authenticated_as(admin)
           get '/api/v1/users/me'
-          expect(UserInfo.current_token).to be_nil
+          expect(UserInfo).not_to have_received(:current_token=).with(token)
         end
       end
     end
@@ -1465,14 +1467,14 @@ RSpec.describe 'User', performs_jobs: true, type: :request do
 
     it 'sends email verification notifications' do
       allow(NotificationFactory::Mailer).to receive(:notification)
-      make_request successful_params
+      perform_enqueued_jobs(only: NotificationMailerJob) { make_request successful_params }
       expect(NotificationFactory::Mailer).to have_received(:notification) { |arguments| arguments[:template] == 'signup' }
     end
 
     it 'sends password reset notification when email already used' do
       create(:customer, email: successful_params[:email])
       allow(NotificationFactory::Mailer).to receive(:notification)
-      make_request successful_params
+      perform_enqueued_jobs(only: NotificationMailerJob) { make_request successful_params }
       expect(NotificationFactory::Mailer).to have_received(:notification) { |arguments| arguments[:template] == 'signup_taken_reset' }
     end
 
@@ -1861,6 +1863,18 @@ RSpec.describe 'User', performs_jobs: true, type: :request do
         end
       end
     end
+
+    context 'with a password change' do
+      before do
+        allow(NotificationFactory::Mailer).to receive(:notification)
+
+        put "/api/v1/users/#{agent.id}", params: { password: 'SomeTestPassword123!' }, as: :json
+      end
+
+      it 'notifies the user' do
+        expect(NotificationFactory::Mailer).to have_received(:notification).with(include(template: 'password_change'))
+      end
+    end
   end
 
   describe 'PUT /api/v1/users/unlock/{id}' do
@@ -1912,11 +1926,11 @@ RSpec.describe 'User', performs_jobs: true, type: :request do
 
     it 'calls notification reset method' do
       allow(User)
-        .to receive(:reset_notifications_preferences!)
+        .to receive(:reset_personal_notifications_preferences!)
 
       post '/api/v1/users/preferences_notifications_reset', as: :json
 
-      expect(User).to have_received(:reset_notifications_preferences!).with(agent)
+      expect(User).to have_received(:reset_personal_notifications_preferences!).with(agent)
     end
   end
 

@@ -11,6 +11,24 @@ RSpec.describe 'Knowledge Base Locale Answer Reader', time_zone: 'Europe/London'
       published_answer.translations.first.update! created_at: date, updated_at: date
     end
 
+    context 'image content' do
+      it 'opens inline images in the existing image preview modal' do
+        open_answer published_answer_with_image
+
+        within :active_content do
+          find('.knowledge-base-article-content img').click
+        end
+
+        in_modal do
+          expect(page).to have_css('div.imagePreview img')
+          expect(page).to have_css('.js-cancel')
+          expect(page).to have_css('.js-submit')
+
+          page.find('.js-cancel').click
+        end
+      end
+    end
+
     context 'state' do
       it 'shown as "Draft" for draft' do
         open_answer draft_answer
@@ -48,7 +66,7 @@ RSpec.describe 'Knowledge Base Locale Answer Reader', time_zone: 'Europe/London'
     context 'time' do
       it 'shown for internal' do
         travel_to internal_answer.internal_at - 1.week do
-          internal_answer.translations.first.touch
+          internal_answer.translations.first.touch(:edited_at)
         end
 
         open_answer internal_answer
@@ -60,7 +78,7 @@ RSpec.describe 'Knowledge Base Locale Answer Reader', time_zone: 'Europe/London'
 
       it 'shown for published' do
         travel_to published_answer.published_at do
-          published_answer.translations.first.touch
+          published_answer.translations.first.touch(:edited_at)
         end
 
         open_answer published_answer
@@ -74,7 +92,7 @@ RSpec.describe 'Knowledge Base Locale Answer Reader', time_zone: 'Europe/London'
         published_answer.update! internal_at: published_answer.published_at - 1.day
 
         travel_to published_answer.published_at - 2.days do
-          published_answer.translations.first.touch
+          published_answer.translations.first.touch(:edited_at)
         end
 
         open_answer published_answer
@@ -100,14 +118,14 @@ RSpec.describe 'Knowledge Base Locale Answer Reader', time_zone: 'Europe/London'
         end
       end
 
-      it 'replaced by update time if later than publishing time' do
+      it 'replaced by editorial update time if later than publishing time' do
         translation = published_answer.translations.first
         translation.content.update! body: 'updated body'
 
         open_answer published_answer
 
         within :active_content, '.knowledge-base-article-meta' do
-          expect(page).to have_time_tag published_answer.translations.first.updated_at
+          expect(page).to have_time_tag published_answer.translations.first.edited_at
         end
       end
     end
@@ -173,7 +191,7 @@ RSpec.describe 'Knowledge Base Locale Answer Reader', time_zone: 'Europe/London'
 
     it 'time shown' do
       travel_to published_answer.published_at - 1.week do
-        published_answer.translations.first.touch
+        published_answer.translations.first.touch(:edited_at)
       end
 
       open_answer published_answer

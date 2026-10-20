@@ -54,6 +54,26 @@ RSpec.describe Gql::Mutations::AIAnalytics::Usage, :aggregate_failures, type: :g
         expect(gql.result.data['usage']['id']).to eq(gql.id(AI::Analytics::Usage.last))
       end
 
+      context 'without an input' do
+        let(:query) do
+          <<~MUTATION
+            mutation aiAnalyticsUsage($aiAnalyticsRunId: ID!) {
+              aiAnalyticsUsage(aiAnalyticsRunId: $aiAnalyticsRunId) {
+                usage {
+                  id
+                }
+              }
+            }
+          MUTATION
+        end
+
+        let(:variables) { { aiAnalyticsRunId: gql.id(ai_analytics_run) } }
+
+        it 'records usage' do
+          expect(gql.result.data['usage']['id']).to eq(gql.id(AI::Analytics::Usage.last))
+        end
+      end
+
       context 'with an existing usage' do
         let(:usage) { create(:ai_analytics_usage, ai_analytics_run:, user: agent) }
 
@@ -72,6 +92,15 @@ RSpec.describe Gql::Mutations::AIAnalytics::Usage, :aggregate_failures, type: :g
           it 'updates the usage comment' do
             expect(gql.result.data['usage']['id']).to eq(gql.id(usage))
             expect(usage.reload.comment).to eq(comment)
+          end
+        end
+
+        context 'with feedback provided already' do
+          let(:usage)  { create(:ai_analytics_usage, ai_analytics_run:, user: agent, rating: true) }
+          let(:rating) { true }
+
+          it 'raises an error' do
+            expect(gql.result.error_type).to eq(Service::AI::Analytics::UpsertUsage::FeedbackAlreadyProvidedError)
           end
         end
 

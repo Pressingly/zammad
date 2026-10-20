@@ -38,12 +38,24 @@ RSpec.describe 'Article Image View', type: :system do
       first('.ticket-article-item .js-preview').click
       images = Store.last(3)
       wait.until { page.find('div.imagePreview img')[:src].include?("/#{images[0].id}") }
-      find('body').send_keys :arrow_right
+      find('body').send_keys :right
       wait.until { page.find('div.imagePreview img')[:src].include?("/#{images[1].id}") }
-      find('body').send_keys :arrow_right
+      find('body').send_keys :right
       wait.until { page.find('div.imagePreview img')[:src].include?("/#{images[2].id}") }
-      find('body').send_keys :arrow_left
+      find('body').send_keys :left
       wait.until { page.find('div.imagePreview img')[:src].include?("/#{images[1].id}") }
+    end
+
+    # Ported from test/browser/agent_ticket_zoom_hide_test.rb: navigating to
+    #   another ticket closes an open preview modal.
+    it 'does close the preview modal when switching to another ticket' do
+      first('.ticket-article-item .js-preview').click
+
+      expect(page).to have_css('div.modal div.imagePreview')
+
+      visit "#ticket/zoom/#{create(:ticket, group: Group.first).id}"
+
+      expect(page).to have_no_css('div.modal')
     end
   end
 end

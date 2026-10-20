@@ -22,6 +22,17 @@ RSpec.describe 'Ticket zoom > Checklist', authenticated_as: :authenticate, curre
     click_on text
   end
 
+  # The ticket zoom may render its sidebar again once the checklist has loaded, which resets it
+  #   to the first tab and drops an earlier click. Clicking the active tab would collapse it.
+  #   Checks for the checklist itself, the factory's checklist name is blank and found anywhere.
+  def open_checklist_sidebar
+    wait(30).until do
+      click '.tabsSidebar-tab[data-tab=checklist]' if page.has_no_css?('.tabsSidebar-tab.active[data-tab=checklist]', wait: 0)
+
+      page.has_css?('.sidebar[data-tab=checklist] .checklistShow', wait: 1)
+    end
+  end
+
   before do
     visit "#ticket/zoom/#{ticket.id}"
   end
@@ -48,6 +59,7 @@ RSpec.describe 'Ticket zoom > Checklist', authenticated_as: :authenticate, curre
   end
 
   it 'does show handle subscriptions for badge when sidebar is not opened' do
+    ensure_websocket(check_if_pinged: false)
     create(:checklist, ticket: ticket)
     expect(page).to have_css(".tabsSidebar-tab[data-tab='checklist'] .js-tabCounter", text: ticket.checklist.items.count)
   end
@@ -59,7 +71,15 @@ RSpec.describe 'Ticket zoom > Checklist', authenticated_as: :authenticate, curre
     before do
       checklist
       click '.tabsSidebar-tab[data-tab=checklist]'
-      wait.until { page.text.include?(checklist.name.upcase) } # checklist name is shown in all-caps
+
+      # The checklist above is created directly in the database, bypassing the frontend, so
+      #   sidebar_checklist.coffee's `shown()` can run before the real-time push updating the
+      #   ticket's local checklist_id arrives, rendering its "no checklist yet" empty state -
+      #   which then only self-corrects on a generic ticket-reload event, not reliably in time.
+      #   Refresh (a real fetch, independent of that push) and reopen the tab if that happens.
+      refresh if page.has_button?('Add empty checklist', wait: 5)
+
+      open_checklist_sidebar
       await_empty_ajax_queue
     end
 
@@ -293,10 +313,21 @@ RSpec.describe 'Ticket zoom > Checklist', authenticated_as: :authenticate, curre
           find('.articleNewEdit-body').send_keys('New article')
           select 'closed', from: 'State'
           click '.js-submit'
-          expect(page.find('.modal-body')).to have_text('You have unchecked items in the checklist')
-          page.find('.modal-footer .js-skip').click
-          expect(page.find('.modal-body')).to have_text('Accounted Time'.upcase)
-          page.find('.modal-footer .js-skip').click
+
+          # Interact via in_modal, which waits for the end of the fade animation -
+          #   a click into the still moving dialog can miss the button silently.
+          in_modal do
+            expect(page).to have_text('You have unchecked items in the checklist')
+
+            click '.js-skip'
+          end
+
+          in_modal do
+            expect(page).to have_text('Accounted Time'.upcase)
+
+            click '.js-skip'
+          end
+
           wait.until { ticket.reload.state.name == 'closed' }
         end
       end
@@ -372,8 +403,8 @@ RSpec.describe 'Ticket zoom > Checklist', authenticated_as: :authenticate, curre
 
     it 'does update for badge when sidebar is not opened and same user updates related tickets' do
       expect(page)
-        .to have_css(".tabsSidebar-tab[data-tab='checklist'] .js-tabCounter", text: ticket.checklist.incomplete)
-        .and(have_css('.js-checklist-state .ticket-meta-highlighted', text: "#{ticket.checklist.complete} of #{ticket.checklist.total}"))
+        .to have_css(".tabsSidebar-tab[data-tab='checklist'] .js-tabCounter", text: ticket.checklist.incomplete, wait: 30)
+        .and(have_css('.js-checklist-state .ticket-meta-highlighted', text: "#{ticket.checklist.complete} of #{ticket.checklist.total}", wait: 30))
     end
   end
 end

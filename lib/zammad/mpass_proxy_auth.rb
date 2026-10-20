@@ -5,8 +5,8 @@ require 'json'
 
 module Zammad
   class MpassProxyAuth
-    EMAIL_HEADER          = 'HTTP_X_AUTH_REQUEST_EMAIL'
-    ACCESS_TOKEN_HEADER   = 'HTTP_X_AUTH_REQUEST_ACCESS_TOKEN'
+    EMAIL_HEADER          = 'HTTP_X_AUTH_REQUEST_EMAIL'.freeze
+    ACCESS_TOKEN_HEADER   = 'HTTP_X_AUTH_REQUEST_ACCESS_TOKEN'.freeze
 
     def initialize(app)
       @app = app
@@ -30,11 +30,11 @@ module Zammad
       session = env['rack.session']
       user = upsert_user(email)
 
-      return forbidden('User could not be resolved') if user.nil?
-      return forbidden('User account is not active') unless user.active
+      return forbidden(__('User could not be resolved')) if user.nil?
+      return forbidden(__('User account is not active')) if !user.active
 
       if maintenance_mode?(user)
-        return forbidden('Maintenance mode enabled!')
+        return forbidden(__('Maintenance mode enabled!'))
       end
 
       existing_user_id = session[:user_id]
@@ -47,7 +47,7 @@ module Zammad
         Rails.logger.info { "mpass_proxy_auth: session re-key from user #{existing_user_id} to #{user.id}" }
       end
 
-      establish_session(env, session, user)
+      establish_session(session, user)
 
       @app.call(env)
     end
@@ -61,7 +61,7 @@ module Zammad
       if claim.include?('@')
         claim
       else
-        domain = ENV['DEFAULT_EMAIL_DOMAIN'] # rubocop:disable Rails/EnvironmentVariableAccess
+        domain = ENV['DEFAULT_EMAIL_DOMAIN']
         if domain.blank?
           Rails.logger.error('mpass_proxy_auth: bare username received but DEFAULT_EMAIL_DOMAIN is not set — failing closed')
           return nil
@@ -75,7 +75,7 @@ module Zammad
     end
 
     def corporate_id_enforcement_active?
-      ENV['SMB_CORPORATE_ID'].present? # rubocop:disable Rails/EnvironmentVariableAccess
+      ENV['SMB_CORPORATE_ID'].present?
     end
 
     def check_corporate_id(env)
@@ -89,15 +89,15 @@ module Zammad
       parts = access_token.split('.')
       return forbidden('access_denied') if parts.length < 2
 
-      payload = begin
+      begin
         decoded = Base64.urlsafe_decode64(parts[1])
-        JSON.parse(decoded)
-      rescue StandardError => e
+        payload = JSON.parse(decoded)
+      rescue => e
         Rails.logger.warn("mpass_proxy_auth: failed to decode access token payload: #{e.message}")
         return forbidden('access_denied')
       end
 
-      expected = ENV['SMB_CORPORATE_ID'] # rubocop:disable Rails/EnvironmentVariableAccess
+      expected = ENV['SMB_CORPORATE_ID']
       is_corporate = payload['custom:is_corporate']
       corporate_id = payload['custom:corporate_id']
 
@@ -117,7 +117,7 @@ module Zammad
 
         create_user(email)
       end
-    rescue StandardError => e
+    rescue => e
       Rails.logger.error("mpass_proxy_auth: user upsert failed for #{email}: #{e.message}")
       nil
     end
@@ -143,7 +143,7 @@ module Zammad
       )
     end
 
-    def establish_session(env, session, user)
+    def establish_session(session, user)
       session.delete(:switched_from_user_id)
       session[:user_id] = user.id
       session[:persistent] = true

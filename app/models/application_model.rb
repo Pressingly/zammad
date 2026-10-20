@@ -10,7 +10,6 @@ class ApplicationModel < ActiveRecord::Base
   include ApplicationModel::ChecksAttributeValuesAndLength
   include ApplicationModel::CanCleanupParam
   include ApplicationModel::CanDestroyDependentAssociations
-  include ApplicationModel::HasRecentViews
   include ApplicationModel::ChecksUserColumnsFillup
   include ApplicationModel::CanCreatesAndUpdates
   include ApplicationModel::CanAssets
@@ -23,6 +22,8 @@ class ApplicationModel < ActiveRecord::Base
   include ApplicationModel::CanQueryCaseInsensitiveWhereOrSql
   include ApplicationModel::HasExistsCheckByObjectAndId
   include ApplicationModel::HasRequestCache
+
+  validates_with Validations::DateRangeValidator
 
   self.abstract_class = true
 end

@@ -85,8 +85,14 @@ RSpec.describe 'Desktop > Ticket > Edit', app: :desktop_view, authenticated_as: 
       #
       # Title
       #
-      find('[aria-label="Edit ticket title"]').click
-      wait.until { page.has_css?('button[aria-label="Save changes"]') }
+      within '[data-test-id="ticket-detail-top-bar-full-details"]' do
+        find('[aria-label="Edit ticket title"]').click
+      end
+      # CommonInlineEdit focuses its input asynchronously (nextTick + queued
+      #   task), and page-level keystrokes go to whatever is focused - typing
+      #   after the save button renders but before the focus lands loses the
+      #   leading keys (produced titles like 'Test initialed' in CI).
+      expect(page).to have_css('[data-test-id="ticket-detail-top-bar-full-details"] input:focus')
       send_keys ' changed', :enter
       wait_for_gql('shared/entities/ticket/graphql/mutations/titleUpdate.graphql', number: 1)
       expect(page).to have_text('Ticket updated successfully')
@@ -115,38 +121,42 @@ RSpec.describe 'Desktop > Ticket > Edit', app: :desktop_view, authenticated_as: 
         expect(page).to have_css("a[href=\"/desktop/tickets/#{ticket.id}\"] svg[aria-label=\"closed\"]")
       end
 
-      # Issue with underlying apis
-      # The Drag-end event is not emitted, so it's stuck in the event circle.
-      # We will test this on vitest side when we work on
-      # https://github.com/zammad/coordination-desktop-view/issues/468
-      # TODO: reevaluate on next patch releases if this is still an issue
-
       #
       # Reorder taskbar
       #
-      #       click_on 'New ticket'
-      #       expect(page).to have_css('label', text: 'Text field')
-      #       expect(page).to have_no_css('label', text: 'Select field')
-      #
-      #       within '#user-taskbar-tabs' do
-      #         expect(page).to have_text("Test initial changed\nReceived call")
-      #
-      #         o1 = find('li.draggable', text: 'Test initial changed')
-      #         o2 = find('li.draggable', text: 'Received call')
-      #         o1.drag_to(o2)
-      #
-      #         wait_for_gql('apps/desktop/entities/user/current/graphql/mutations/userCurrentTaskbarItemListPrio.graphql')
-      #
-      #         expect(page).to have_text("Received call\nTest initial changed")
-      #       end
+      click_on 'New ticket'
+      expect(page).to have_css('label', text: 'Text field')
+      expect(page).to have_no_css('label', text: 'Select field')
 
-      #       logout
+      within '#user-taskbar-tabs' do
+        expect(page).to have_text("Test initial changed\nReceived call")
 
-      #       login(username: agent.login, password: 'test')
+        o1 = find('li.draggable', text: 'Test initial changed')
+        o2 = find('li.draggable', text: 'Received call')
 
-      #       within '#user-taskbar-tabs' do
-      #         expect(page).to have_text("Received call\nTest initial changed")
-      #       end
+        # Move the focus into the dragged tab before the drag: @formkit/drag-and-drop
+        #  turns off the item's `draggable` attribute when focus enters it during
+        #  a mouse press (handleNodeFocus), which would derail Capybara's HTML5
+        #  drag emulation right at its initial press. With the focus already on
+        #  the link, that press triggers no focus change and `draggable` stays on.
+        #  #send_keys moves the focus without any pointer interaction - the lone
+        #  shift key is pressed only because sending no key at all is not possible.
+        o1.find('a').send_keys(:shift)
+
+        o1.drag_to(o2, html5: true)
+
+        wait_for_gql('apps/desktop/entities/user/current/graphql/mutations/userCurrentTaskbarItemListPrio.graphql')
+
+        expect(page).to have_text("Received call\nTest initial changed")
+      end
+
+      logout
+
+      login(username: agent.login, password: 'test')
+
+      within '#user-taskbar-tabs' do
+        expect(page).to have_text("Received call\nTest initial changed")
+      end
     end
   end
 end

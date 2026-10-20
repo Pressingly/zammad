@@ -81,10 +81,6 @@ Zammad includes scripts to streamline common tasks.
 
 - `pnpm generate-graphql-api` - Regenerate GraphQL introspection file
 - `pnpm generate-setting-types` - Regenerate Zammad setting types
-- `pnpm generate:install` - Setup code generation tools
-- `pnpm generate:generic-component` - Generate generic component
-- `pnpm generate:composable` - Generate generic composable
-- `pnpm generate:store` - Generate generic store
 
 ## Testing
 
@@ -104,7 +100,7 @@ Further testing:
 
 Linting ensures consistent code style and readability. They are optional but recommended:
 
-- [CoffeeLint](http://www.coffeelint.org/)
+- [CoffeeLint](https://coffeelint.github.io/)
 - [Stylelint](https://stylelint.io/)
 - [ESLint](https://eslint.org/)
 - [Markdownlint](https://github.com/DavidAnson/markdownlint)
@@ -134,12 +130,12 @@ Some tasks can be executed directly via Rails console or `rails r`:
 
 For further information see:
 
-- [Rails Console Reference](https://next.zammad.org/en/reference/console.html)
-- [Environment Variables](https://next.zammad.org/en/reference/environment-variables.html)
+- [Rails Console Reference](https://next.zammad.org/reference/rails-commands.html)
+- [Environment Variables](https://next.zammad.org/reference/environment-variables.html)
 
 ## Further Reading
 
 Learn more about developing and contributing to Zammad:
 
 - [Cookbooks](../cookbook/) - Step-by-step guides for specific tasks
-- [Contributing](https://next.zammad.org/en/contribute/contribute.html) – How to contribute code to Zammad
+- [Contributing](https://next.zammad.org/contribute/contribute.html) – How to contribute code to Zammad

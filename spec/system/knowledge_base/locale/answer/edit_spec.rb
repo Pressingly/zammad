@@ -114,7 +114,7 @@ RSpec.describe 'Knowledge Base Locale Answer Edit', type: :system do
       find('a[data-action="link_answer"]').click
 
       within('.popover-content') do
-        find('input').fill_in with: input
+        find('input.js-input').fill_in with: input
         first('.js-option span', text: input).click
         find('[type=submit]').click
       end
@@ -153,6 +153,24 @@ RSpec.describe 'Knowledge Base Locale Answer Edit', type: :system do
 
       iframe = find('iframe')
       expect(iframe['src']).to start_with('https://www.youtube.com/embed/')
+    end
+
+    context 'with self-hosted video content' do
+      it 'loads stored video from a whitelisted media server' do
+        Setting.set('kb_self_hosted_video_servers', [{ 'host' => 'video.example.com', 'name' => 'Example' }])
+
+        visit "#knowledge_base/#{knowledge_base.id}/locale/#{primary_locale.system_locale.locale}/answer/#{published_answer_with_self_hosted_video.id}"
+
+        iframe = find('iframe')
+        expect(iframe['src']).to eq('https://video.example.com/videos/embed/uuid-1')
+      end
+
+      it 'renders no embed when the media server is not whitelisted' do
+        visit "#knowledge_base/#{knowledge_base.id}/locale/#{primary_locale.system_locale.locale}/answer/#{published_answer_with_self_hosted_video.id}"
+
+        expect(page).to have_css('.js-answer-title', text: published_answer_with_self_hosted_video.translations.first.title)
+        expect(page).to have_no_css('iframe')
+      end
     end
   end
 

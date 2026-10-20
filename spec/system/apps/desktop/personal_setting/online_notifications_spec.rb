@@ -32,24 +32,20 @@ RSpec.describe 'Desktop > Ticket > Online Notifications', app: :desktop_view, au
         expect(page).to have_text("#{agent_b.fullname} updated ticket")
         click_on 'mark all as read'
         wait_for_mutation('onlineNotificationMarkAllAsSeen')
-      end
 
-      find('button[aria-label="Show notifications"]').click
-
-      within('[role="region"]') do
         expect(page).to have_css('a', text: "#{agent_b.fullname} updated ticket", style: { opacity: '0.3' })
       end
 
       find("[aria-label='#{Capybara::Selector::CSS.escape(agent.fullname)}']").click
 
-      click_on 'Profile settings'
+      click_on 'Personal settings'
 
       click_on 'Notifications'
 
       find('label', text: 'New ticket - All tickets').click
       find('label', text: 'Ticket update - All tickets').click
 
-      click_on 'Save notifications'
+      click_on 'Save notification settings'
 
       wait_for_mutation('userCurrentNotificationPreferencesUpdate', number: 1)
 

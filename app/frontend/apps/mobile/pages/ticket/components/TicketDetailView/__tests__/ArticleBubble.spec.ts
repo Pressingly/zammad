@@ -13,11 +13,22 @@ import { i18n } from '#shared/i18n.ts'
 import { waitForAnimationFrame } from '#shared/utils/helpers.ts'
 import { isStandalone } from '#shared/utils/pwa.ts'
 
-import { routes } from '#mobile/router/index.ts'
-
 import ArticleBubble from '../ArticleBubble.vue'
 
-const mainRoutes = routes.at(-1)?.children || []
+// Importing the real router index triggers import.meta.glob({ eager: true }), which
+// pulls in all page route files. Those route files contain lazy component factories
+// that can fire during Vitest environment teardown, causing EnvironmentTeardownError
+// for modules that are already gone. The tests here never render any child views —
+// they only assert router.push calls and need /ticket/zoom/:id to resolve as a
+// known route (not the Error catch-all) for useHtmlLinks link-resolution logic.
+const mainRoutes = [
+  {
+    path: 'tickets/:internalId(\\d+)',
+    alias: ['/ticket/:internalId(\\d+)', '/ticket/zoom/:internalId(\\d+)'],
+    name: 'TicketDetailView',
+    component: { template: '<div></div>' },
+  },
+]
 
 const renderArticleBubble = (props = {}) => {
   return renderComponent(ArticleBubble, {
@@ -64,7 +75,6 @@ describe('component for displaying text article', () => {
     })
 
     mockApplicationConfig({
-      ui_ticket_zoom_attachments_preview: true,
       api_path: '/api',
       'active_storage.content_types_allowed_inline': [
         'image/webp',
@@ -303,7 +313,7 @@ describe('component for displaying text article', () => {
       ],
     })
 
-    expect(view.getByText('2 attached files')).toBeInTheDocument()
+    expect(view.getByText('2 attached file(s)')).toBeInTheDocument()
 
     const attachments = view.getAllByRole('link', { name: /Zammad / })
 

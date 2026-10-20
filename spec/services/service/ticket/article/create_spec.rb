@@ -52,6 +52,7 @@ RSpec.describe Service::Ticket::Article::Create, current_user_id: -> { user.id }
         it 'does not save article and raises error' do
           expect { service_result }
             .to raise_error(%r{Time Accounting is not enabled})
+            .and(not_change(Ticket::Article, :count))
         end
       end
     end
@@ -119,6 +120,12 @@ RSpec.describe Service::Ticket::Article::Create, current_user_id: -> { user.id }
 
           expect(service_result.type.name).to eq('note')
         end
+
+        it 'drops client-supplied preferences' do
+          payload[:preferences] = { 'security' => { 'type' => '<img src=x>' } }
+
+          expect(service_result.preferences).not_to include('security')
+        end
       end
 
       # Agent-Customer is incorrectly detected as Agent in a group he has no access to
@@ -150,6 +157,12 @@ RSpec.describe Service::Ticket::Article::Create, current_user_id: -> { user.id }
           payload[:type] = 'phone'
 
           expect(service_result.type.name).to eq('phone')
+        end
+
+        it 'keeps client-supplied preferences' do
+          payload[:preferences] = { 'security' => { 'type' => 'S/MIME' } }
+
+          expect(service_result.preferences).to include('security')
         end
       end
     end

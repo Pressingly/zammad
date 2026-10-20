@@ -97,7 +97,7 @@ RSpec.describe BackgroundServices do
           instance.send(:run_service, config)
 
           expect(Rails.logger).to have_received(:info).with(no_args) do |&block|
-            expect(block.call).to match(%r{Skipping disabled service})
+            expect(block.call).to include('Skipping disabled service')
           end
         end
       end
@@ -184,19 +184,28 @@ RSpec.describe BackgroundServices do
     end
   end
 
-  describe '#restart_on_file_change' do
-    let(:config) { described_class::ServiceConfig.new(service: SampleService, disabled: false, workers: 0, worker_threads: 1) }
+  # The file watcher thread must not survive the examples: it would keep polling all watchable
+  #   paths for the rest of the suite and crash unrelated examples when a file it just globbed
+  #   is removed again (e.g. by the package specs).
+  describe '#restart_on_file_change', ensure_threads_exited: true do
+    let(:config)       { described_class::ServiceConfig.new(service: SampleService, disabled: false, workers: 0, worker_threads: 1) }
+    let(:kill_tracker) { { called: false } }
 
     before do
       stub_const("#{described_class}::FILE_WATCHING_INTERVAL", 0)
-      allow(Process).to receive(:kill)
+
+      allow(Process).to receive(:kill) { kill_tracker[:called] = true }
       allow(Rails.application.config).to receive(:reloading_enabled?).and_return(true)
 
       instance.run
 
       FileUtils.touch(file)
 
-      sleep 0.1
+      # The file-watcher notices changes on its own background thread, so give it a real
+      #   chance to run instead of racing a fixed sleep against CI scheduling delays - for
+      #   the negative case, this also means waiting out the same budget without success.
+      deadline = 3.seconds.from_now
+      sleep 0.05 until kill_tracker[:called] || Time.zone.now > deadline
     end
 
     context 'when backend file changes' do

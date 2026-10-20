@@ -3,8 +3,8 @@
 require 'rails_helper'
 
 RSpec.describe Service::AI::Ticket::PreProcessArticleContent do
-  let(:ocr_active) { true }
-  let(:ticket)     { create(:ticket) }
+  let(:ticket)      { create(:ticket) }
+  let(:default_ocr) { true }
 
   let(:articles) do
     create_list(
@@ -62,7 +62,8 @@ RSpec.describe Service::AI::Ticket::PreProcessArticleContent do
       acc + article.attachments
     end
 
-    setup_ai_provider('zammad_ai', ocr_active: ocr_active)
+    setup_ai_provider('zammad_ai')
+    set_ai_provider_default_ocr(default_ocr:)
 
     # Mock image recognition, but return different text for each attachment.
     attachments.each_with_index do |attachment, index|
@@ -111,8 +112,10 @@ RSpec.describe Service::AI::Ticket::PreProcessArticleContent do
       )
     end
 
-    context 'when OCR is deactivated' do
-      let(:ocr_active) { false }
+    context 'when the system does not support OCR' do
+      subject(:service_result) { described_class.execute(articles: ticket.articles.without_system_notifications) }
+
+      let(:default_ocr) { false }
 
       it 'strips inline images and does not return image attachments' do
         expect(service_result).to contain_exactly(
@@ -144,8 +147,6 @@ RSpec.describe Service::AI::Ticket::PreProcessArticleContent do
     context 'with skip_quotes_strip_first_article option', aggregate_failures: true do
       subject(:service_result) { described_class.execute(articles:, skip_quotes_strip_first_article: true) }
 
-      let(:ocr_active) { false }
-
       let(:articles) do
         [
           create(:ticket_article, :inbound_email, ticket: ticket, content_type: 'text/html',
@@ -168,8 +169,6 @@ RSpec.describe Service::AI::Ticket::PreProcessArticleContent do
 
     context 'with plain text articles' do
       subject(:service_result) { described_class.execute(articles:) }
-
-      let(:ocr_active) { false }
 
       let(:articles) do
         [

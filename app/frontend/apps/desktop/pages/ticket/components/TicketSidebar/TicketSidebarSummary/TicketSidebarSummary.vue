@@ -2,10 +2,9 @@
 
 <script setup lang="ts">
 import { whenever } from '@vueuse/shared'
-import { computed, type EffectScope, effectScope, ref, watch, toRef } from 'vue'
+import { computed, type EffectScope, effectScope, onUnmounted, ref, watch, toRef } from 'vue'
 
 import { useReactivate } from '#shared/composables/useReactivate.ts'
-import { useTicketArticleUpdatesSubscription } from '#shared/entities/ticket/graphql/subscriptions/ticketArticlesUpdates.api.ts'
 import {
   type AiAnalyticsMetadata,
   type AsyncExecutionError,
@@ -23,6 +22,7 @@ import {
 } from '#desktop/pages/ticket/components/TicketSidebar/TicketSidebarSummary/types.ts'
 import { useTicketSummaryGenerating } from '#desktop/pages/ticket/components/TicketSidebar/TicketSidebarSummary/useTicketSummaryGenerating.ts'
 import { usePersistentStates } from '#desktop/pages/ticket/composables/usePersistentStates.ts'
+import { useTicketArticleCountChange } from '#desktop/pages/ticket/composables/useTicketArticleCountChange.ts'
 import { useTicketInformation } from '#desktop/pages/ticket/composables/useTicketInformation.ts'
 import { useTicketSidebar } from '#desktop/pages/ticket/composables/useTicketSidebar.ts'
 import { useTicketAiAssistanceSummarizeMutation } from '#desktop/pages/ticket/graphql/mutations/ticketAIAssistanceSummarize.api.ts'
@@ -66,11 +66,7 @@ const isProviderConfigured = computed(() => !!config.value.ai_provider)
 
 const isEnabled = computed(
   () =>
-    !!(
-      ticket.value &&
-      ticket.value?.state.name !== 'merged' &&
-      config.value.ai_assistance_ticket_summary
-    ),
+    !!(ticket.value && config.value.ai_assistance_ticket_summary && ticket.value.aiSummaryEnabled),
 )
 
 const headings = computed<SummaryItem[]>(() => [
@@ -112,7 +108,6 @@ const generationError = ref<AsyncExecutionError | null>(null)
 const analyticsMeta = ref<AiAnalyticsMetadata | null>()
 
 const isCurrentTicketSummaryUnread = computed(() => analyticsMeta.value?.isUnread)
-const isTicketStateMerged = computed(() => ticket.value?.state.name === 'merged')
 
 const { updateSummaryGenerating, isSummaryGenerating } = useTicketSummaryGenerating()
 
@@ -121,7 +116,6 @@ const ticketSummaryHandler = new MutationHandler(useTicketAiAssistanceSummarizeM
 const showUpdateIndicator = computed(
   () =>
     !!isCurrentTicketSummaryUnread.value &&
-    !isTicketStateMerged.value &&
     !isSummaryGenerating.value &&
     runWhenSidebarIsActive.value,
 )
@@ -171,27 +165,11 @@ whenever(isSummarySideBarActive, () => {
 const retrySummaryGeneration = () => getAIAssistanceSummary(true)
 const regenerateSummary = () => getAIAssistanceSummary(true)
 
-const activateTicketArticleUpdatesSubscription = () => {
-  const articleSubscription = new SubscriptionHandler(
-    useTicketArticleUpdatesSubscription(
-      () => ({
-        ticketId: ticketId.value,
-      }),
-      () => ({
-        enabled: isProviderConfigured.value && runWhenSidebarIsActive.value,
-      }),
-    ),
-  )
-
-  articleSubscription.onSubscribed().then(() => {
-    articleSubscription.onResult(({ data }) => {
-      const isNewArticle = data?.ticketArticleUpdates.addArticle
-
-      if (!isNewArticle || isNewArticle?.sender?.name === 'System') return
-
-      getAIAssistanceSummary()
-    })
-  })
+// A new article makes the summary outdated. The ticket already reports that through its article
+// count, so no second article subscription is opened here. #getAIAssistanceSummary keeps its own
+// conditions, and this watcher only lives as long as the scope the sidebar activates it in.
+const watchTicketArticleCount = () => {
+  useTicketArticleCountChange(() => ticket.value?.articleCount, getAIAssistanceSummary)
 }
 
 const activateTicketSummarySubscription = () => {
@@ -229,36 +207,46 @@ const activateTicketSummarySubscription = () => {
   })
 }
 
-const activateSubscriptions = () => {
-  activateTicketArticleUpdatesSubscription()
-  activateTicketSummarySubscription()
+let subscriptionsScope: EffectScope | undefined
+
+const handleDeactivateSubscriptions = () => {
+  subscriptionsScope?.stop()
+  subscriptionsScope = undefined
 }
 
-let subscriptionsScope: EffectScope
-
-const handleDeactivateSubscriptions = () => subscriptionsScope?.stop()
-
+// useReactivate swallows the first onActivated (its isMounted flag only flips in
+// onDeactivated), so that hook and the immediate isEnabled watcher run below can never both
+// fire on mount. What they can coincide on is isEnabled flipping to true while the component
+// sits deactivated in the keep-alive cache, followed by onActivated on reactivation - so this
+// still has to be idempotent, otherwise a second, un-stopped scope leaks: it isn't attached to
+// the component's own scope (it's created outside the synchronous setup() call), so Vue never
+// disposes it on unmount, and it keeps reacting (e.g. double-firing the article count watcher)
+// for as long as the app lives.
 const handleActivateSubscriptions = () => {
+  if (subscriptionsScope) return
+
   subscriptionsScope = effectScope()
-  subscriptionsScope.run(activateSubscriptions)
+  subscriptionsScope.run(() => {
+    watchTicketArticleCount()
+    activateTicketSummarySubscription()
+  })
   getAIAssistanceSummary()
 }
 
 useReactivate(handleActivateSubscriptions, handleDeactivateSubscriptions)
 
+onUnmounted(handleDeactivateSubscriptions)
+
 watch(
   isEnabled,
   (showSidebar) => {
     if (showSidebar) {
-      subscriptionsScope = effectScope()
-      subscriptionsScope.run(activateSubscriptions)
-
-      getAIAssistanceSummary()
+      handleActivateSubscriptions()
 
       emit('show')
     } else {
       emit('hide')
-      subscriptionsScope?.stop()
+      handleDeactivateSubscriptions()
     }
   },
   { immediate: true },

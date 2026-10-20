@@ -6,8 +6,10 @@ import { ref } from 'vue'
 import { renderComponent } from '#tests/support/components/index.ts'
 import { mockApplicationConfig } from '#tests/support/mock-applicationConfig.ts'
 import { mockPermissions } from '#tests/support/mock-permissions.ts'
+import { nullableMock } from '#tests/support/utils.ts'
 
 import { mockAiAssistanceTextToolsRunMutation } from '#shared/graphql/mutations/aiAssistanceTextToolsRun.mocks.ts'
+import type { AiAssistanceTextToolsListQuery } from '#shared/graphql/types.ts'
 import { useAiAssistantTextToolsStore } from '#shared/stores/aiAssistantTextTools.ts'
 import getUuid from '#shared/utils/getUuid.ts'
 
@@ -46,7 +48,7 @@ describe('keyboard interactions', () => {
       props: {
         visible: true,
         contentType: 'text/html',
-        disabledPlugins: [],
+        disabledExtensions: [],
         formId: getUuid(),
       },
     })
@@ -76,7 +78,7 @@ describe('keyboard interactions', () => {
       props: {
         visible: true,
         contentType: 'text/html',
-        disabledPlugins: [],
+        disabledExtensions: [],
         formId: getUuid(),
       },
     })
@@ -97,7 +99,7 @@ describe('keyboard interactions', () => {
       props: {
         contentType: 'text/html',
         visible: true,
-        disabledPlugins: [],
+        disabledExtensions: [],
         formId: getUuid(),
       },
     })
@@ -113,7 +115,7 @@ describe('keyboard interactions', () => {
       props: {
         contentType: 'text/html',
         visible: true,
-        disabledPlugins: [],
+        disabledExtensions: [],
         formId: getUuid(),
       },
     })
@@ -130,7 +132,7 @@ describe('keyboard interactions', () => {
       props: {
         contentType: 'text/html',
         visible: true,
-        disabledPlugins: [],
+        disabledExtensions: [],
         formId: getUuid(),
       },
     })
@@ -143,11 +145,13 @@ describe('keyboard interactions', () => {
 
 describe('basic toolbar testing', () => {
   it("don't see disabled actions", () => {
+    mockPermissions(['ticket.agent'])
+
     const view = renderComponent(FieldEditorActionBar, {
       props: {
         contentType: 'text/html',
         visible: true,
-        disabledPlugins: ['mentionUser'],
+        disabledExtensions: ['mentionUser'],
         formId: getUuid(),
       },
     })
@@ -164,7 +168,7 @@ describe('basic toolbar testing', () => {
       props: {
         contentType: 'text/plain',
         visible: true,
-        disabledPlugins: [],
+        disabledExtensions: [],
         formId: getUuid(),
       },
     })
@@ -235,7 +239,7 @@ describe('basic toolbar testing', () => {
         props: {
           contentType: 'text/plain',
           visible: true,
-          disabledPlugins: [],
+          disabledExtensions: [],
           formId: getUuid(),
         },
       })
@@ -257,7 +261,7 @@ describe('basic toolbar testing', () => {
         props: {
           contentType: 'text/plain',
           visible: true,
-          disabledPlugins: [],
+          disabledExtensions: [],
           formId: getUuid(),
         },
       })
@@ -279,7 +283,7 @@ describe('basic toolbar testing', () => {
         props: {
           contentType: 'text/plain',
           visible: true,
-          disabledPlugins: [],
+          disabledExtensions: [],
           formId: getUuid(),
         },
       })
@@ -312,22 +316,25 @@ describe('basic toolbar testing', () => {
       const store = useAiAssistantTextToolsStore()
 
       vi.spyOn(store, 'lookupResult').mockReturnValue(
-        ref({
-          aiAssistanceTextToolsList: [
-            {
-              id: 'expand-tool-123',
-              name: 'Expand',
-              active: true,
-            },
-          ],
-        }),
+        ref(
+          nullableMock<AiAssistanceTextToolsListQuery>({
+            aiAssistanceTextToolsList: [
+              {
+                __typename: 'AITextTool',
+                id: 'expand-tool-123',
+                name: 'Expand',
+                active: true,
+              },
+            ],
+          }),
+        ),
       )
 
       const wrapper = renderComponent(FieldEditorActionBar, {
         props: {
           contentType: 'text/plain',
           visible: true,
-          disabledPlugins: [],
+          disabledExtensions: [],
           formId,
           editor: mockEditor,
           formContext: {

@@ -164,6 +164,7 @@ class App.TicketZoom extends App.Controller
 
     attributes_to_ignore_for_notify = [
       'ai_agent_running',
+      'ai_summary_enabled',
       'updated_by_id',
       'updated_at',
     ]
@@ -621,6 +622,7 @@ class App.TicketZoom extends App.Controller
         ui:                 @
         highlighter:        @highlighter
         ticket_article_ids: @ticket_article_ids
+        time_accountings:   @time_accountings
         form_id:            @form_id
       )
 
@@ -659,6 +661,7 @@ class App.TicketZoom extends App.Controller
     else
       @articleView.execute(
         ticket_article_ids: @ticket_article_ids
+        time_accountings:   @time_accountings
       )
 
     if @sidebarWidget

@@ -62,7 +62,7 @@ RSpec.describe Zammad::MpassLogout do
   end
 
   describe '.sync_settings! resilience' do
-    it 'still syncs the redirect setting when the SSO setting write fails' do
+    it 'still syncs the redirect setting when the SSO setting write fails', :aggregate_failures do
       allow(Setting).to receive(:set).and_call_original
       allow(Setting).to receive(:set)
         .with(described_class::SSO_SETTING_NAME, anything)
@@ -72,7 +72,7 @@ RSpec.describe Zammad::MpassLogout do
       expect(Setting.get(described_class::REDIRECT_SETTING_NAME)).to eq(portal_url)
     end
 
-    it 'still syncs the SSO setting when the redirect write fails' do
+    it 'still syncs the SSO setting when the redirect write fails', :aggregate_failures do
       allow(Setting).to receive(:set).and_call_original
       allow(Setting).to receive(:set)
         .with(described_class::REDIRECT_SETTING_NAME, anything)
@@ -84,7 +84,7 @@ RSpec.describe Zammad::MpassLogout do
   end
 
   describe '.sync_settings!' do
-    it 'creates both settings and stores the portal URL' do
+    it 'creates both settings and stores the portal URL', :aggregate_failures do
       expect(described_class.sync_settings!).to be(true)
 
       expect(Setting.get(described_class::SSO_SETTING_NAME)).to be(true)
@@ -109,7 +109,7 @@ RSpec.describe Zammad::MpassLogout do
     context 'when SSO is not active' do
       let(:auth_type) { nil }
 
-      it 'clears a previously stored portal URL' do
+      it 'clears a previously stored portal URL', :aggregate_failures do
         allow(ENV).to receive(:[]).with('AUTH_TYPE').and_return('SSO')
         described_class.sync_settings!
         allow(ENV).to receive(:[]).with('AUTH_TYPE').and_return(nil)

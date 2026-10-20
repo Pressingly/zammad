@@ -6,8 +6,9 @@ import { computed } from 'vue'
 import { QueryHandler } from '#shared/server/apollo/handler/index.ts'
 
 import CommonLoader from '#desktop/components/CommonLoader/CommonLoader.vue'
-import TicketSimpleTable from '#desktop/pages/ticket/components/TicketDetailView/TicketSimpleTable/TicketSimpleTable.vue'
-import type { TicketRelationAndRecentListItem } from '#desktop/pages/ticket/components/TicketDetailView/TicketSimpleTable/types.ts'
+import TicketSimpleTable from '#desktop/components/Ticket/TicketSimpleTable/TicketSimpleTable.vue'
+import type { TicketRelationAndRecentListItem } from '#desktop/components/Ticket/TicketSimpleTable/types.ts'
+import TicketRelationAndRecentListsSkeleton from '#desktop/pages/ticket/components/TicketDetailView/TicketRelationAndRecentLists/TicketRelationAndRecentListsSkeleton.vue'
 import { useTicketRelationAndRecentTicketListsQuery } from '#desktop/pages/ticket/graphql/queries/ticketRelationAndRecentTicketLists.api.ts'
 
 interface Props {
@@ -50,6 +51,10 @@ const ticketsRecentlyViewed = computed(
 
 <template>
   <CommonLoader :loading="isLoading">
+    <template #skeleton>
+      <TicketRelationAndRecentListsSkeleton />
+    </template>
+
     <div class="space-y-6">
       <TicketSimpleTable
         v-if="ticketsByCustomer && ticketsByCustomer.length > 0"

@@ -28,6 +28,7 @@ export interface Props {
   disabled?: boolean
   noSingleActionMode?: boolean
   customMenuButtonLabel?: string
+  headerLabel?: string
   defaultIcon?: string
   defaultButtonVariant?: ButtonVariant | 'neutral-light' | 'neutral-dark'
   zIndex?: string
@@ -51,8 +52,10 @@ const { filteredMenuItems, singleMenuItemPresent, singleMenuItem } = usePopoverM
   { provides: true },
 )
 
-const entityId = computed(() => props.entity?.id || getUuid())
-const menuId = computed(() => `popover-${entityId.value}`)
+// Generated per component instance instead of derived from the entity, so
+// the same entity rendered in multiple places (e.g. compact/full headers) never ends up with duplicate DOM ids.
+const instanceId = getUuid()
+const menuId = computed(() => `popover-${instanceId}`)
 
 const singleActionAriaLabel = computed(() => {
   if (typeof singleMenuItem.value?.ariaLabel === 'function') {
@@ -124,9 +127,9 @@ const router = useRouter()
 
     <template v-else>
       <CommonButton
-        :id="`action-menu-${entityId}`"
+        :id="`action-menu-${instanceId}`"
         ref="popoverTarget"
-        :aria-label="$t(customMenuButtonLabel || 'Action menu button')"
+        v-tooltip="customMenuButtonLabel || $t('Action menu button')"
         aria-haspopup="true"
         :aria-expanded="popoverIsOpen"
         :aria-controls="popoverIsOpen ? menuId : undefined"
@@ -157,7 +160,7 @@ const router = useRouter()
         :orientation="orientation"
         :owner="popoverTarget"
       >
-        <CommonPopoverMenu :entity="entity" :popover="popover" />
+        <CommonPopoverMenu :entity="entity" :popover="popover" :header-label="headerLabel" />
       </CommonPopover>
     </template>
   </div>

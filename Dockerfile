@@ -9,23 +9,27 @@ FROM docker.io/library/ruby:$RUBY_VERSION-slim-trixie AS base
 # Rails app lives here
 WORKDIR /opt/zammad
 
-# Set production environment
-ENV RAILS_ENV="production" \
-    BUNDLE_DEPLOYMENT="1" \
-    BUNDLE_PATH="/usr/local/bundle" \
-    BUNDLE_WITHOUT="test development" \
-    RAILS_LOG_TO_STDOUT="true"
-
 # Install base packages
 # Add official PostgreSQL apt repository to not depend on Debian's version.
 #   https://www.postgresql.org/download/linux/debian/
 # Use `postgresql-client` meta-package to have the latest `pg_dump` that works even with the latest PostgreSQL versions.
 #   https://github.com/zammad/zammad/issues/6009
+# Remove sendmail binary from image, as it could receive emails that will go nowhere.
 RUN apt-get update -qq && \
     apt-get install -y postgresql-common && \
     /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && \
-    apt-get install --no-install-recommends -y curl libimlib2 libpq5 nginx gnupg postgresql-client && \
+    apt-get install -y --no-install-recommends libjemalloc2 curl libimlib2 libpq5 nginx gnupg postgresql-client && \
+    apt-get remove -y --purge exim4-base exim4-config bsd-mailx && \
+    apt-get autoremove -y --purge && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+# Set production environment
+ENV RAILS_ENV="production" \
+    BUNDLE_DEPLOYMENT="1" \
+    BUNDLE_PATH="/usr/local/bundle" \
+    BUNDLE_WITHOUT="test development" \
+    RAILS_LOG_TO_STDOUT="true" \
+    LD_PRELOAD="libjemalloc.so.2"
 
 # Throw-away stage to get the node binary
 FROM node:${NODE_VERSION}-trixie-slim AS node
@@ -36,6 +40,9 @@ RUN npm -g install corepack && corepack enable pnpm && \
 FROM base AS build
 
 ARG COMMIT_SHA
+# Optional additional build information, e.g. the customer image name when building
+#   images with addon packages. Shown in the version string of the instance.
+ARG BUILD_LABEL
 
 SHELL ["/bin/bash", "-o", "errexit", "-o", "pipefail", "-c"]
 
@@ -55,7 +62,7 @@ COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=node /usr/local/bin /usr/local/bin
 
 # Install node modules
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY .eslint-plugin-zammad/package.json .eslint-plugin-zammad/pnpm-lock.yaml .eslint-plugin-zammad/lib/ .eslint-plugin-zammad/
 RUN pnpm install --frozen-lockfile
 
@@ -67,10 +74,37 @@ RUN if [ -z "${COMMIT_SHA}" ]; then \
     echo "Error: the required build argument \$COMMIT_SHA is missing."; \
     exit 1; \
   fi; \
+  if ! [[ "${COMMIT_SHA}" =~ ^[0-9a-fA-F]{7,40}$ ]]; then \
+    echo "Error: the build argument \$COMMIT_SHA must match [0-9a-fA-F]{7,40}, got '${COMMIT_SHA}'."; \
+    exit 1; \
+  fi; \
+  if [ -n "${BUILD_LABEL}" ] && ! [[ "${BUILD_LABEL}" =~ ^[0-9a-zA-Z_.-]{1,35}$ ]]; then \
+    echo "Error: the build argument \$BUILD_LABEL must match [0-9a-zA-Z_.-]{1,35}, got '${BUILD_LABEL}'."; \
+    exit 1; \
+  fi; \
   COMMIT_SHA_SHORT=$(echo "${COMMIT_SHA}" | cut -c 1-8); \
-  echo "$(tr -d '\n' < VERSION)-${COMMIT_SHA_SHORT}.docker" > VERSION; \
+  echo "$(tr -d '\n' < VERSION)-${COMMIT_SHA_SHORT}${BUILD_LABEL:+.${BUILD_LABEL}}.docker" > VERSION; \
   echo 'Updated build information in VERSION:'; \
   cat VERSION
+
+# Special handling for zpm addons, if present:
+# - Unpack addon packages provided in packages/install/*.zpm (registered in the database on container start)
+#   and packages/uninstall/*.zpm (removed from the database on container start).
+# - Install additional gems provided by addon packages (Gemfile.local.*).
+#   Deployment mode is disabled to allow updating the Gemfile.lock with the additional gems.
+# - Regenerate the GraphQL frontend API in case addon packages extend the GraphQL schema.
+#   A rake task is used instead of 'rails generate' because rake skips eager loading,
+#   which would require a database connection.
+RUN if compgen -G "packages/*/*.zpm" > /dev/null; then \
+    ruby script/build/unpack_addon_packages.rb; \
+    if compgen -G "Gemfile.local.*" > /dev/null; then \
+        BUNDLE_DEPLOYMENT=false bundle install && \
+        rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache; \
+    fi; \
+    mkdir -p tmp && touch db/schema.rb; \
+    RAILS_LOG_TO_STDOUT= ZAMMAD_SAFE_MODE=1 DATABASE_URL=postgresql://zammad:/zammad ZAMMAD_GRAPHQL_INTROSPECTION=true bundle exec rake zammad:graphql:introspection > app/graphql/graphql_introspection.json; \
+    pnpm exec graphql-codegen -c .graphql_code_generator.js; \
+  fi
 
 # Don't require Redis or Postgres (use fake DATABASE_URL to make Rails validation happy).
 RUN touch db/schema.rb && \
@@ -89,8 +123,11 @@ RUN apt-get update -qq && \
     apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
+# ZAMMAD_DOCKER is used by Zammad to take decisions for containerized environments,
+#   e.g. hiding the package management interface because installed packages do not persist.
 # Application variables with defaults matching the Zammad docker stack.
-ENV POSTGRESQL_DB=zammad_production \
+ENV ZAMMAD_DOCKER=true \
+    POSTGRESQL_DB=zammad_production \
     POSTGRESQL_HOST=zammad-postgresql \
     POSTGRESQL_PORT=5432 \
     POSTGRESQL_USER=zammad \
@@ -113,6 +150,18 @@ RUN mkdir -p "/opt/zammad/storage" "/opt/zammad/tmp" && \
 # Copy built artifacts: gems, application
 COPY --chown=1000:1000 --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"
 COPY --chown=1000:1000 --from=build /opt/zammad /opt/zammad
+
+# Remove Ruby default/bundled gems that are superseded by Bundler-managed versions from Gemfile.lock
+#   to avoid false positives in container vulnerability scanners.
+#   https://github.com/zammad/zammad/issues/6258
+RUN ruby script/build/remove_superseded_system_gems.rb
+
+# Expose the Bundler-managed gems to RubyGems via a stable path (the real directory name
+#   depends on the Ruby ABI version), so CLI tools like irb and rake also work outside of `bundle exec`.
+RUN ln -s "${BUNDLE_PATH}/ruby/$(ruby -e 'print RbConfig::CONFIG[%q(ruby_version)]')" "${BUNDLE_PATH}/ruby/current"
+ENV GEM_PATH="${BUNDLE_PATH}/ruby/current" \
+    PATH="${BUNDLE_PATH}/ruby/current/bin:${PATH}"
+
 # Backwards compatibility for older images that used /docker-entrypoint.sh
 RUN ln -s "/opt/zammad/bin/docker-entrypoint" /docker-entrypoint.sh
 

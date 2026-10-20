@@ -16,7 +16,6 @@ import { useTicketCreate } from '#shared/entities/ticket/composables/useTicketCr
 import { useTicketCreateArticleType } from '#shared/entities/ticket/composables/useTicketCreateArticleType.ts'
 import { useTicketCreateView } from '#shared/entities/ticket/composables/useTicketCreateView.ts'
 import { useTicketFormOrganizationHandler } from '#shared/entities/ticket/composables/useTicketFormOrganizationHandler.ts'
-import { useTicketSignature } from '#shared/entities/ticket/composables/useTicketSignature.ts'
 import type { TicketFormData } from '#shared/entities/ticket/types.ts'
 import { useUserQuery } from '#shared/entities/user/graphql/queries/user.api.ts'
 import { defineFormSchema } from '#shared/form/defineFormSchema.ts'
@@ -41,7 +40,7 @@ const router = useRouter()
 
 // TODO: Add meta header with selected ticket create article type.
 
-const { canSubmit, form, node, isDirty, formSubmit } = useForm()
+const { canSubmit, form, node, isDirty, formSubmit, values } = useForm()
 
 const {
   multiStepPlugin,
@@ -327,6 +326,7 @@ const ticketArticleMessageSection = getFormSchemaGroupSection(
                 organizationNodeName: 'organization_id',
               },
             },
+            signatureEnabled: computed(() => values.value.articleSenderType === 'email-out'),
           },
           triggerFormUpdater: false,
         },
@@ -443,8 +443,6 @@ onBeforeRouteLeave(async () => {
   return confirmed
 })
 
-const { signatureHandling } = useTicketSignature()
-
 const ticketDuplicateDetectionDialog = useDialog({
   name: 'duplicate-ticket-detection',
   component: () => import('#mobile/components/Ticket/TicketDuplicateDetectionDialog.vue'),
@@ -520,7 +518,6 @@ export default {
       :schema="formSchema"
       :handlers="[
         useTicketFormOrganizationHandler(),
-        signatureHandling('body'),
         useTicketDuplicateDetectionHandler(showTicketDuplicateDetectionDialog),
       ]"
       :flatten-form-groups="Object.keys(allSteps)"
@@ -536,7 +533,7 @@ export default {
     :class="{
       'bg-gray-light backdrop-blur-lg': !isScrolledToBottom,
     }"
-    class="pb-safe fixed bottom-0 z-10 w-full px-4 transition"
+    class="fixed bottom-0 z-10 w-full px-4 pb-safe transition"
   >
     <FormKit
       :variant="lastStepName === activeStep ? 'submit' : 'primary'"

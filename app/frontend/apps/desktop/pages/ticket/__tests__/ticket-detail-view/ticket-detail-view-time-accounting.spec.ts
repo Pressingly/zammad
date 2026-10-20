@@ -18,7 +18,7 @@ import { createDummyTicket } from '#shared/entities/ticket-article/__tests__/moc
 import { EnumUserErrorException } from '#shared/graphql/types.ts'
 import { convertToGraphQLId } from '#shared/graphql/utils.ts'
 
-import { mockLinkListQuery } from '../../graphql/queries/linkList.mocks.ts'
+import { mockLinkListQuery } from '#desktop/entities/link/graphql/queries/linkList.mocks.ts'
 
 describe('Ticket detail view', () => {
   beforeEach(() => {
@@ -186,7 +186,11 @@ describe('Ticket detail view', () => {
 
       await getNode('form-ticket-edit-1')?.settled
 
-      await view.events.click(await view.findByRole('button', { name: 'Add internal note' }))
+      const floatingToolbar = view.getByRole('toolbar', { name: 'Ticket actions' })
+
+      await view.events.click(
+        await within(floatingToolbar).findByRole('button', { name: 'Add internal note' }),
+      )
 
       const editor = await view.findByRole('textbox', { name: 'Text' })
       await view.events.type(editor, 'Foo note')

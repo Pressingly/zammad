@@ -370,6 +370,27 @@ RSpec.describe Ticket::Article, type: :model do
       end
     end
 
+    describe 'Cti::CallerId cleanup on destroy' do
+      let(:ticket)   { create(:ticket) }
+      let!(:article) { create(:ticket_article, ticket: ticket, body: 'Please call me back on 0049 30 9876543.') }
+
+      before { Cti::CallerId.add(ticket) }
+
+      context 'when the source article is destroyed' do
+        it 'removes the caller ID record' do
+          expect { article.destroy }
+            .to change { Cti::CallerId.where(object: 'Ticket', o_id: article.id).count }.from(1).to(0)
+        end
+      end
+
+      context 'when the ticket is destroyed' do
+        it 'removes the caller ID record via the article cascade' do
+          expect { ticket.destroy }
+            .to change { Cti::CallerId.where(object: 'Ticket', o_id: article.id).count }.from(1).to(0)
+        end
+      end
+    end
+
     describe 'Sending of outgoing emails', performs_jobs: true do
       subject(:article) { create(:ticket_article, type_name: type, sender_name: sender) }
 
@@ -831,11 +852,14 @@ RSpec.describe Ticket::Article, type: :model do
     let(:article_1) { create(:ticket_article, :system_outbound_email, ticket:) }
     let(:article_2) { create(:ticket_article, :inbound_web, ticket:) }
     let(:article_3) { create(:ticket_article, :outbound_email, ticket:) }
+    let(:article_4) { create(:ticket_article, :internal_note, ticket:) }
+    let(:article_5) { create(:ticket_article, :system_note, ticket:) }
+    let(:article_6) { create(:ticket_article, :system_delivery_message, ticket:) }
 
-    before { article_1 && article_2 && article_3 }
+    before { article_1 && article_2 && article_3 && article_4 && article_5 && article_6 }
 
-    it 'filters out System articles' do
-      expect(ticket.articles.without_system_notifications).to contain_exactly(article_2, article_3)
+    it 'filters out certain system articles' do
+      expect(ticket.articles.without_system_notifications).to contain_exactly(article_2, article_3, article_4, article_5)
     end
   end
 

@@ -25,11 +25,11 @@ RSpec.describe Service::Ticket::AIAssistance::GenerateKnowledgeBaseAnswerContent
     end
 
     context 'with valid ticket and articles' do
-      let(:ai_result) { AI::Service::Result.new(content: { 'title' => 'Generated title' }) }
+      let(:ai_result) { Service::AI::Feature::Result[content: { 'title' => 'Generated title' }] }
 
       before do
         create(:ticket_article, ticket:)
-        allow_any_instance_of(AI::Service::KnowledgeBaseAnswerFromTicket).to receive(:execute).and_return(ai_result)
+        allow_any_instance_of(Service::AI::Feature::KnowledgeBaseAnswerFromTicket).to receive(:execute).and_return(ai_result)
       end
 
       it 'returns AI generated content' do

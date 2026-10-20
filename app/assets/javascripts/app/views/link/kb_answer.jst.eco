@@ -6,7 +6,11 @@
       	<%- @Icon('knowledge-base') %>
       </div>
       <div class="task-text">
-        <a class="name kb-answer-popover" data-id="<%- item.id %>" href="<%- item.url %>"><%= item.title %></a>
+        <a class="name kb-answer-popover horizontal center"  data-id="<%- item.id %>" href="<%- item.url %>" <% if @publicLinks: %>target="_blank"<% end %>><%= item.title %>
+          <% if @publicLinks: %>
+            <%- @Icon('external', 'kb-answer-external-icon') %>
+          <% end %>
+        </a>
       </div>
       <% if @editable: %>
         <a class="list-item-delete js-delete" data-object="KnowledgeBase::Answer::Translation" data-object-id="<%= item.id %>" data-link-type="normal">
@@ -23,4 +27,45 @@
     <% end %>
     <span class="js-add u-clickable">+ <%- @T('Link') %></span>
   </div>
+<% end %>
+<div class="js-kb-link-search"></div>
+<% if @suggestionsEnabled: %>
+  <label class="kb-suggestions-title"><%- @T('Suggested knowledge') %></label>
+  <% if not @suggestionsLoaded: %>
+    <p class="text-muted"><%- @T('Searching for related answers…') %></p>
+  <% else if @suggestionsError: %>
+    <p class="text-muted"><%- @T('The suggestions could not be generated.') %></p>
+    <button type="button" class="btn btn--text js-kb-suggestions-retry"><%- @T('Retry') %></button>
+  <% else if @suggestions.length is 0: %>
+    <%# Not a no-answers-found message: the best matches may all be linked already, and listed above. %>
+    <p class="text-muted"><%- @T('No suggestions.') %></p>
+  <% else: %>
+    <ol class="tasks tasks--standalone">
+      <% for item in @suggestions: %>
+        <li class="task">
+          <div class="icon-holder">
+            <%- @Icon('knowledge-base') %>
+          </div>
+          <div class="task-text">
+            <div class="horizontal justify-between center">
+              <div class="horizontal center flex-shrink-horizontal">
+                <a class="name kb-answer-popover" data-id="<%- item.id %>" href="<%- item.url %>" <% if @publicLinks: %>target="_blank"<% end %>><%= item.title %></a>
+                <% if @publicLinks: %>
+                  <%- @Icon('external', 'kb-answer-external-icon') %>
+                <% end %>
+              </div>
+              <% if not _.isUndefined(item.score): %>
+                <span class="task-addon" title="<%- @Tp('Relevance score') %>"><%= item.score %>%</span>
+              <% end %>
+            </div>
+          </div>
+          <% if @editable: %>
+            <a class="task-addon list-item-add js-kb-suggestion-add" data-object-id="<%= item.id %>" title="<%- @Tp('Link') %>">
+              <%- @Icon('plus') %>
+            </a>
+          <% end %>
+        </li>
+      <% end %>
+    </ol>
+  <% end %>
 <% end %>

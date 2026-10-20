@@ -25,6 +25,7 @@ import CommonButton from '#desktop/components/CommonButton/CommonButton.vue'
 import LayoutContent from '#desktop/components/layout/LayoutContent.vue'
 
 import { useBreadcrumb } from '../composables/useBreadcrumb.ts'
+import { usePersonalSettingTabs } from '../composables/usePersonalSettingTabs.ts'
 import { useUserCurrentOutOfOfficeMutation } from '../graphql/mutations/userCurrentOutOfOffice.api.ts'
 
 import type { OutOfOfficeFormData } from '../types/out-of-office.ts'
@@ -118,7 +119,7 @@ onChangedField('enabled', (newValue: FormFieldValue) => {
   Object.assign(formChangeFields, buildFormChangesHash(!!newValue))
 })
 
-const { breadcrumbItems } = useBreadcrumb(__('Out of office'))
+const { breadcrumbItems } = useBreadcrumb()
 
 const formDataToInput = (formData: FormSubmitData<OutOfOfficeFormData>): OutOfOfficeInput => {
   const replacementId = formData.replacement_id
@@ -153,10 +154,17 @@ const submitForm = async (formData: FormSubmitData<OutOfOfficeFormData>) => {
     .send({ input: formDataToInput(formData) })
     .then(() => showSuccessNotification)
 }
+
+const { tabs, activeTab } = usePersonalSettingTabs()
 </script>
 
 <template>
-  <LayoutContent :breadcrumb-items="breadcrumbItems" width="narrow">
+  <LayoutContent
+    :active-tab="activeTab"
+    :tabs="tabs"
+    :breadcrumb-items="breadcrumbItems"
+    width="narrow"
+  >
     <div class="mb-4">
       <Form
         ref="form"

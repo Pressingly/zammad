@@ -20,12 +20,17 @@ RSpec.describe 'Caller log', authenticated_as: :authenticate, type: :system do
     }
   end
 
-  let(:first_params) { params.merge(event: 'newCall')  }
-  let(:second_params) { params.merge(event: 'hangup')  }
+  let(:first_params) { params.merge(event: 'newCall') }
+  let(:second_params) { params.merge(event: 'hangup') }
 
+  # Cti::Log#push_caller_list_update delivers the `cti_list_push` events via
+  #   user-targeted Sessions.send_to - wait for the agent's authenticated
+  #   session before placing calls, otherwise the pushes are lost for good
+  #   and the caller log is never updated.
   let(:visit_cti) do
     visit 'cti'
     ensure_websocket
+    wait_for_authenticated_session(user: agent)
   end
 
   let(:place_call) do
@@ -45,6 +50,7 @@ RSpec.describe 'Caller log', authenticated_as: :authenticate, type: :system do
     it 'shows the phone menu in nav bar' do
       visit '/'
       ensure_websocket
+      wait_for_authenticated_session(user: agent)
 
       within '#navigation .menu' do
         place_call
@@ -112,7 +118,7 @@ RSpec.describe 'Caller log', authenticated_as: :authenticate, type: :system do
           expect(page).to have_css('input[name="title"][value="Call from 0190333"]', visible: :all)
           expect(page).to have_css('.tabsSidebar-tab[data-tab="customer"]', visible: :all)
           expect(page).to have_css("input[name=customer_id][value='#{customer.id}']", visible: :hide)
-          expect(find('[name=customer_id_completion]').value).to eq "#{customer.fullname} <#{customer.email}>"
+          expect(page).to have_field('customer_id_completion', with: "#{customer.fullname} <#{customer.email}>")
         end
       end
     end
@@ -131,7 +137,7 @@ RSpec.describe 'Caller log', authenticated_as: :authenticate, type: :system do
           expect(page).to have_text('New Ticket')
           expect(page).to have_css("input[name='title'][value='Call from 0190333']", visible: :all)
           expect(page).to have_no_css('.tabsSidebar-tab[data-tab="customer"]')
-          expect(find('[name=customer_id_completion]').value).to eq ''
+          expect(page).to have_field('customer_id_completion', with: '')
         end
       end
     end
@@ -169,7 +175,7 @@ RSpec.describe 'Caller log', authenticated_as: :authenticate, type: :system do
           expect(page).to have_css('input[name="title"][value="Call from 0190444"]', visible: :all)
           expect(page).to have_css('.tabsSidebar-tab[data-tab="customer"]', visible: :all)
           expect(page).to have_css("input[name=customer_id][value='#{customer.id}']", visible: :hide)
-          expect(find('[name=customer_id_completion]').value).to eq '0190444'
+          expect(page).to have_field('customer_id_completion', with: '0190444')
         end
       end
     end
@@ -290,8 +296,8 @@ RSpec.describe 'Caller log', authenticated_as: :authenticate, type: :system do
              organization: organization)
     end
 
-    shared_examples 'showing user with thier organization name' do
-      it 'shows user with thier organization name' do
+    shared_examples 'showing user with their organization name' do
+      it 'shows user with their organization name' do
         within :active_content do
           expect(page).to have_css(
             '.js-callerLog tr div.user-popover',
@@ -305,14 +311,14 @@ RSpec.describe 'Caller log', authenticated_as: :authenticate, type: :system do
       let(:first_params) { params.merge(event: 'newCall', direction: 'out', from: agent_phone, to: customer.phone) }
       let(:second_params) { params.merge(event: 'hangup', direction: 'out', from: agent_phone, to: customer.phone) }
 
-      it_behaves_like 'showing user with thier organization name'
+      it_behaves_like 'showing user with their organization name'
     end
 
     context 'with call direction in' do
       let(:first_params) { params.merge(event: 'newCall', direction: 'in') }
       let(:second_params) { params.merge(event: 'hangup', direction: 'in') }
 
-      it_behaves_like 'showing user with thier organization name'
+      it_behaves_like 'showing user with their organization name'
     end
   end
 end

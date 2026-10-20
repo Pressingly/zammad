@@ -5,6 +5,7 @@ import { computed, useTemplateRef } from 'vue'
 import { useRouter } from 'vue-router'
 
 import ObjectAttributes from '#shared/components/ObjectAttributes/ObjectAttributes.vue'
+import { useReducedMotion } from '#shared/composables/useReducedMotion.ts'
 import { useOrganizationDetail } from '#shared/entities/organization/composables/useOrganizationDetail.ts'
 import { useOrganizationEntity } from '#shared/entities/organization/composables/useOrganizationEntity.ts'
 import { useOrganizationNoteUpdateMutation } from '#shared/entities/organization/graphql/mutations/noteUpdate.api.ts'
@@ -12,9 +13,13 @@ import { convertToGraphQLId } from '#shared/graphql/utils.ts'
 import SubscriptionHandler from '#shared/server/apollo/handler/SubscriptionHandler.ts'
 import { useSessionStore } from '#shared/stores/session.ts'
 import { GraphQLErrorTypes } from '#shared/types/error.ts'
+import { scrollIntoView } from '#shared/utils/dom.ts'
 import emitter from '#shared/utils/emitter.ts'
 
 import CommonButton from '#desktop/components/CommonButton/CommonButton.vue'
+import CommonFloatingToolbar from '#desktop/components/CommonFloatingToolbar/CommonFloatingToolbar.vue'
+import CommonIndicator from '#desktop/components/CommonIndicator/CommonIndicator.vue'
+import { useIndicator } from '#desktop/components/CommonIndicator/useIndicator.ts'
 import CommonLoader from '#desktop/components/CommonLoader/CommonLoader.vue'
 import CommonSectionContainer from '#desktop/components/CommonSectionContainer/CommonSectionContainer.vue'
 import CommonShowMoreButton from '#desktop/components/CommonShowMoreButton/CommonShowMoreButton.vue'
@@ -27,6 +32,7 @@ import { useScrollPosition } from '#desktop/composables/useScrollPosition.ts'
 import { useTicketByOrganizationUpdatesSubscription } from '#desktop/entities/ticket/graphql/subscriptions/ticketByOrganizationUpdates.api.ts'
 
 import OrganizationDetailTopBar from './OrganizationDetailTopBar.vue'
+import OrganizationDetailViewContentSkeleton from './OrganizationDetailViewContentSkeleton.vue'
 import OrganizationRelatedTickets from './OrganizationRelatedTickets.vue'
 
 interface Props {
@@ -96,6 +102,17 @@ organizationTicketsSubscription.onResult(({ data }) => {
 
   emitter.emit(`organization-ticket-list-refetch:${organizationId.value}`)
 })
+
+const { isIntersecting: isReachingBottom } = useIndicator()
+const { isIntersecting: isReachingTop } = useIndicator()
+
+const { hasReducedMotion } = useReducedMotion()
+
+const scrollTo = (position: 'start' | 'end' = 'end') => {
+  scrollIntoView(contentContainerElement.value, position, {
+    behavior: hasReducedMotion.value ? 'instant' : 'auto',
+  })
+}
 </script>
 
 <template>
@@ -106,14 +123,22 @@ organizationTicketsSubscription.onResult(({ data }) => {
     content-alignment="center"
     no-scrollable
   >
-    <CommonLoader class="mt-8" :loading="loadingWithoutCachedResult">
-      <div ref="content-container" class="h-full w-full overflow-y-auto">
+    <CommonLoader class="size-full" :loading="loadingWithoutCachedResult">
+      <template #skeleton>
+        <OrganizationDetailViewContentSkeleton />
+      </template>
+
+      <div ref="content-container" class="@container size-full overflow-y-auto">
+        <CommonIndicator v-model="isReachingTop" class="translate-y-1" />
+
         <OrganizationDetailTopBar
           :organization="organization"
           :organization-display-name="organizationDisplayName"
           :content-container-element="contentContainerElement"
         />
-        <section class="mx-auto grid w-full max-w-5xl grid-cols-2 gap-6 p-6">
+        <section
+          class="mx-auto grid w-full max-w-5xl min-w-xs grid-cols-1 gap-6 px-5.5 py-3 @2xl:grid-cols-2"
+        >
           <div class="flex flex-col gap-6 self-start">
             <CommonSectionContainer
               v-if="organizationMembers?.totalCount > 0"
@@ -166,7 +191,6 @@ organizationTicketsSubscription.onResult(({ data }) => {
               hasPermission('ticket.agent') &&
               (organization.ticketsCount?.open || organization.ticketsCount?.closed)
             "
-            class="self-start"
             :label="__('Organization tickets')"
           >
             <OrganizationRelatedTickets :organization="organization" />
@@ -175,10 +199,21 @@ organizationTicketsSubscription.onResult(({ data }) => {
           <OrganizationTicketBarChart
             v-if="hasPermission('ticket.agent')"
             ref="chart"
-            class="col-span-2"
+            class="@2xl:col-span-2"
             :organization-id="organizationId"
           />
         </section>
+
+        <div class="sticky bottom-3 h-0 print:hidden">
+          <CommonFloatingToolbar
+            class="absolute inset-e-3 bottom-3 print:hidden"
+            :is-reaching-bottom="isReachingBottom"
+            :is-reaching-top="isReachingTop"
+            @scroll-to-end="scrollTo()"
+            @scroll-to-start="scrollTo('start')"
+          />
+        </div>
+        <CommonIndicator v-model="isReachingBottom" />
       </div>
     </CommonLoader>
   </LayoutContent>

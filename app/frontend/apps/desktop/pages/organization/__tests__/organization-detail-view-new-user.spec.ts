@@ -58,7 +58,7 @@ const visitOrganizationView = async () => {
   const view = await visitView(`/organizations/${organization.internalId}`)
 
   const main = view.getByRole('main')
-  const header = within(main).getByTestId('organization-detail-top-bar')
+  const header = within(main).getByTestId('organization-detail-top-bar-full-details')
 
   return { view, main, header }
 }
@@ -105,7 +105,7 @@ describe('Organization Detail View - New User', () => {
 
     const { view, header } = await visitOrganizationView()
 
-    await view.events.click(within(header).getByRole('menuitem', { name: 'New user' }))
+    await view.events.click(within(header).getByRole('button', { name: 'New user' }))
 
     const flyout = await view.findByRole('complementary', { name: 'New user' })
 

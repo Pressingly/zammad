@@ -16,6 +16,7 @@ require 'models/user/can_lookup_search_index_attributes_examples'
 require 'models/user/performs_geo_lookup_examples'
 require 'models/concerns/has_taskbars_examples'
 require 'models/concerns/has_recent_closes_examples'
+require 'models/concerns/has_recent_views_examples'
 require 'models/concerns/has_two_factor_examples'
 
 RSpec.describe User, type: :model do
@@ -38,13 +39,251 @@ RSpec.describe User, type: :model do
   # it_behaves_like 'CanCsvImport', unique_attributes: 'email'
   include_examples 'CanCsvImport - User specific tests'
   it_behaves_like 'HasObjectManagerAttributes'
+
+  describe 'audit log tracking of password changes' do
+    subject(:tracked_user) { create(:agent) }
+
+    let(:audit_logs) { AuditLog.where(auditable_type: 'User') }
+
+    before do
+      Setting.set('system_init_done', true)
+    end
+
+    it 'logs user creation only with the role assignment, without an attribute snapshot' do
+      tracked_user
+
+      expect(audit_logs).to contain_exactly(
+        have_attributes(
+          action_type: 'create',
+          value_from:  {},
+          value_to:    { 'roles' => ['Agent'] },
+        )
+      )
+    end
+
+    it 'does not log untracked attribute updates' do
+      tracked_user
+
+      expect { tracked_user.update!(firstname: 'Some updated firstname') }.not_to change(audit_logs, :count)
+    end
+
+    it 'logs password changes' do
+      tracked_user
+
+      expect { tracked_user.update!(password: 'someSecurePass123!') }
+        .to change(audit_logs.where(action_type: 'update', auditable_id: tracked_user.id), :count).by(1)
+    end
+
+    it 'masks the password values and records the changed attribute' do
+      tracked_user.update!(password: 'someInitialPass123!') # so that the previous value is maskable, too
+      tracked_user.update!(password: 'someSecurePass123!')
+
+      expect(audit_logs.where(action_type: 'update', auditable_id: tracked_user.id).last).to have_attributes(
+        auditable_name: tracked_user.fullname,
+        value_from:     { 'password' => SensitiveParamsHelper::SENSITIVE_MASK },
+        value_to:       { 'password' => SensitiveParamsHelper::SENSITIVE_MASK },
+        preferences:    include('changed_attributes' => ['password']),
+      )
+    end
+
+    it 'logs password changes of admins' do
+      admin = create(:admin_only)
+
+      expect { admin.update!(password: 'someSecurePass123!') }
+        .to change(audit_logs.where(action_type: 'update', auditable_id: admin.id), :count).by(1)
+    end
+
+    it 'does not log a customer changing their own password' do
+      customer = create(:customer)
+
+      expect { UserInfo.with_user_id(customer.id) { customer.update!(password: 'someSecurePass123!') } }
+        .not_to change(audit_logs, :count)
+    end
+
+    it 'logs a customer password change made by someone else' do
+      customer = create(:customer)
+
+      expect { UserInfo.with_user_id(admin.id) { customer.update!(password: 'someSecurePass123!') } }
+        .to change(audit_logs.where(action_type: 'update', auditable_id: customer.id), :count).by(1)
+    end
+  end
+
+  describe 'audit log tracking of role assignment' do
+    subject(:user) { create(:user) }
+
+    let(:audit_logs)    { AuditLog.where(auditable: user) }
+    let(:agent_role)    { create(:role, :agent) }
+    let(:admin_role)    { create(:role, :admin) }
+    let(:customer_role) { create(:role, :customer) }
+
+    before do
+      Setting.set('system_init_done', true)
+    end
+
+    it 'logs an update entry when an agent/admin related role is assigned' do
+      expect { user.roles << agent_role }
+        .to change { audit_logs.where(action_type: 'update').count }.by(1)
+    end
+
+    it 'logs a create entry instead of an update entry when a user is created with an agent/admin related role' do
+      new_user = create(:user, roles: [agent_role])
+
+      expect(AuditLog.where(auditable: new_user)).to contain_exactly(
+        have_attributes(
+          action_type: 'create',
+          value_from:  {},
+          value_to:    { 'roles' => [agent_role.name] },
+        )
+      )
+    end
+
+    it 'includes the group permissions in the create entry' do
+      group    = create(:group)
+      new_user = create(:user, roles: [agent_role], group_names_access_map: { group.name => ['full'] })
+
+      expect(AuditLog.find_by(auditable: new_user, action_type: 'create').value_to)
+        .to include('roles' => [agent_role.name], 'group_permissions' => { group.name => ['full'] })
+    end
+
+    it 'creates no audit log entry when a user is created with only a customer role' do
+      customer_role
+
+      expect { create(:user, roles: [customer_role]) }.not_to change(AuditLog, :count)
+    end
+
+    it 'records the acting user, the auditable name and the added role names' do
+      UserInfo.with_user_id(1) { user.roles << agent_role }
+
+      expect(audit_logs.find_by(action_type: 'update')).to have_attributes(
+        auditable_name: user.fullname,
+        user_id:        1,
+        value_to:       { 'roles' => [agent_role.name] },
+      )
+    end
+
+    it 'logs added and removed roles of one update in a single entry' do
+      user.roles << agent_role
+
+      expect { user.update!(roles: [customer_role, admin_role]) }
+        .to change { audit_logs.where(action_type: 'update').count }.by(1)
+
+      expect(audit_logs.where(action_type: 'update').reorder(:id).last).to have_attributes(
+        value_from: { 'roles' => [agent_role.name] },
+        value_to:   { 'roles' => [admin_role.name] },
+      )
+    end
+
+    it 'logs the removal of a role in value_from' do
+      user.roles << agent_role
+
+      expect { user.roles.delete(agent_role) }
+        .to change { audit_logs.where(action_type: 'update').count }.by(1)
+
+      expect(audit_logs.where(action_type: 'update').reorder(:id).last).to have_attributes(
+        value_from: { 'roles' => [agent_role.name] },
+        value_to:   {},
+      )
+    end
+
+    it 'creates no audit log entry for a customer role' do
+      user
+      customer_role
+
+      expect { user.roles << customer_role }.not_to change(AuditLog, :count)
+    end
+
+    it 'logs added and removed group permissions of an update' do
+      group = create(:group)
+      agent = create(:agent, group_names_access_map: { group.name => ['read'] })
+
+      agent.update!(group_names_access_map: { group.name => ['full'] })
+
+      expect(AuditLog.where(auditable: agent, action_type: 'update').reorder(:id).last).to have_attributes(
+        value_from: { 'group_permissions' => { group.name => ['read'] } },
+        value_to:   { 'group_permissions' => { group.name => ['full'] } },
+      )
+    end
+
+    context 'when roles and group permissions change in one transaction' do
+      let(:group) { create(:group) }
+      let(:agent) { create(:agent) }
+
+      def update_user_in_one_transaction
+        agent.with_lock do
+          agent.update!(roles: agent.roles + [admin_role], group_names_access_map: { group.name => ['full'] })
+        end
+      end
+
+      it 'creates a single update entry' do
+        expect { update_user_in_one_transaction }
+          .to change { AuditLog.where(auditable: agent, action_type: 'update').count }.by(1)
+      end
+
+      it 'merges the role and group permission changes into the entry' do
+        update_user_in_one_transaction
+
+        expect(AuditLog.find_by(auditable: agent, action_type: 'update').value_to)
+          .to eq('roles' => [admin_role.name], 'group_permissions' => { group.name => ['full'] })
+      end
+    end
+  end
+
+  describe 'audit log tracking of user destruction' do
+    let(:group) { create(:group) }
+
+    before do
+      Setting.set('system_init_done', true)
+    end
+
+    it 'logs a destroy entry when an agent gets destroyed' do
+      agent = create(:agent)
+
+      expect { agent.destroy! }
+        .to change { AuditLog.where(auditable_type: 'User', auditable_id: agent.id, action_type: 'destroy').count }.by(1)
+    end
+
+    it 'records the roles and group permissions in value_from' do
+      agent = create(:agent, group_names_access_map: { group.name => ['full'] })
+      agent.destroy!
+
+      expect(AuditLog.find_by(auditable_type: 'User', auditable_id: agent.id, action_type: 'destroy')).to have_attributes(
+        auditable_name: agent.fullname,
+        value_from:     { 'roles' => ['Agent'], 'group_permissions' => { group.name => ['full'] } },
+        value_to:       {},
+      )
+    end
+
+    it 'creates no entry when a customer gets destroyed' do
+      customer = create(:customer)
+
+      expect { customer.destroy! }.not_to change(AuditLog, :count)
+    end
+  end
+
   it_behaves_like 'CanLookupSearchIndexAttributes'
   it_behaves_like 'HasTaskbars'
   it_behaves_like 'HasRecentCloses'
+  it_behaves_like 'HasRecentViews'
   it_behaves_like 'UserPerformsGeoLookup'
   it_behaves_like 'Association clears cache', association: :roles
   it_behaves_like 'Association clears cache', association: :organizations
   it_behaves_like 'User::HasTwoFactor'
+
+  describe 'adding a group' do
+    # the group associations are only part of the attributes for privileged callers
+    around do |example|
+      UserInfo.with_system_context { example.run }
+    end
+
+    it 'invalidates the association ID cache for both the user and the group' do
+      agent = create(:agent)
+      group = create(:group)
+
+      expect { agent.groups << group }
+        .to change { agent.attributes_with_association_ids['group_ids'].keys.count }.by(1)
+        .and change { group.attributes_with_association_ids['user_ids'].count }.by(1)
+    end
+  end
 
   describe 'Class methods:' do
     describe '.identify' do
@@ -123,6 +362,49 @@ RSpec.describe User, type: :model do
       end
     end
 
+    describe '.reset_personal_notifications_preferences!' do
+      let(:custom_sound) { { 'file' => 'Plop.mp3', 'enabled' => false } }
+
+      context 'when user is agent' do
+        before do
+          agent.preferences['notification_config']['group_ids'] = ['123']
+          agent.preferences['notification_config']['matrix']['escalation']['criteria']['owned_by_me'] = false
+          agent.preferences['notification_sound'] = custom_sound
+          agent.save!
+        end
+
+        it 'removes selected groups' do
+          expect { described_class.reset_personal_notifications_preferences!(agent) }
+            .to change { agent.reload.preferences.dig('notification_config', 'group_ids') }
+            .to(nil)
+        end
+
+        it 'removes notification sound settings' do
+          expect { described_class.reset_personal_notifications_preferences!(agent) }
+            .to change { agent.reload.preferences['notification_sound'] }
+            .to(nil)
+        end
+
+        it 'resets matrix' do
+          expect { described_class.reset_personal_notifications_preferences!(agent) }
+            .to change { agent.reload.preferences.dig('notification_config', 'matrix', 'escalation', 'criteria', 'owned_by_me') }
+            .to(true)
+        end
+      end
+
+      context 'when user is not agent' do
+        before do
+          customer.preferences['notification_sound'] = custom_sound
+          customer.save!
+        end
+
+        it 'does not change notification sound settings' do
+          expect { described_class.reset_personal_notifications_preferences!(customer) }
+            .not_to change { customer.reload.preferences['notification_sound'] }
+        end
+      end
+    end
+
     describe '.by_mobile' do
       let!(:user)        { create(:customer, mobile: saved_mobile) }
       let(:saved_mobile) { '+4912341234' }
@@ -162,10 +444,59 @@ RSpec.describe User, type: :model do
           expect(described_class.by_mobile(number: '99999999999')).to be_nil
         end
       end
+
+      context 'with a nil number' do
+        it 'returns nil without raising' do
+          expect(described_class.by_mobile(number: nil)).to be_nil
+        end
+      end
     end
   end
 
   describe 'Instance methods:' do
+
+    describe '#fullname' do
+      before do
+        allow(Setting).to receive(:get).and_call_original
+        allow(Setting).to receive(:get).with('user_name_format').and_return('first_last')
+      end
+
+      it 'falls back to phone when name fields are nil' do
+        user = described_class.new(firstname: nil, lastname: nil, email: nil, phone: '12345', login: 'phone-only')
+
+        expect(user.fullname).to eq('12345')
+      end
+    end
+
+    describe '#display_name_from_parts' do
+      subject(:user) { described_class.new(firstname: 'John', lastname: 'Doe') }
+
+      it 'joins first and last name by default' do
+        expect(user.display_name_from_parts).to eq('John Doe')
+      end
+
+      context "when user_name_format is 'last_first'" do
+        before { Setting.set('user_name_format', 'last_first') }
+
+        it 'reverses the order' do
+          expect(user.display_name_from_parts).to eq('Doe John')
+        end
+      end
+
+      context "when user_name_format is 'last_first_comma'" do
+        before { Setting.set('user_name_format', 'last_first_comma') }
+
+        it 'reverses the order and joins with a comma' do
+          expect(user.display_name_from_parts).to eq('Doe, John')
+        end
+      end
+
+      it 'never falls back to personal data' do
+        user = described_class.new(firstname: nil, lastname: '', email: 'user@example.com', phone: '12345')
+
+        expect(user.display_name_from_parts).to eq('')
+      end
+    end
 
     describe '#by_reset_token' do
       subject(:user) { token.user }
@@ -687,6 +1018,117 @@ RSpec.describe User, type: :model do
             .to not_change { user.preferences[:mail_delivery_failed_data] }
         end
       end
+
+      describe '"notification_sound" preferences' do
+        it 'accepts boolean true/false on create and update, and rejects invalid values', :aggregate_failures do
+          name  = SecureRandom.uuid
+          roles = Role.where(name: 'Agent')
+
+          agent1 = described_class.create!(
+            login:         "agent-default-preferences-1#{name}@example.com",
+            firstname:     'valid_agent_group_permission-1',
+            lastname:      "Agent#{name}",
+            email:         "agent-default-preferences-1#{name}@example.com",
+            password:      'agentpw',
+            active:        true,
+            roles:         roles,
+            preferences:   {
+              notification_sound: {
+                enabled: true,
+              }
+            },
+            updated_by_id: 1,
+            created_by_id: 1,
+          )
+          expect(agent1.preferences[:notification_sound][:enabled]).to be(true)
+
+          agent2 = described_class.create!(
+            login:         "agent-default-preferences-2#{name}@example.com",
+            firstname:     'valid_agent_group_permission-2',
+            lastname:      "Agent#{name}",
+            email:         "agent-default-preferences-2#{name}@example.com",
+            password:      'agentpw',
+            active:        true,
+            roles:         roles,
+            preferences:   {
+              notification_sound: {
+                enabled: false,
+              }
+            },
+            updated_by_id: 1,
+            created_by_id: 1,
+          )
+          expect(agent2.preferences[:notification_sound][:enabled]).to be(false)
+
+          agent3 = described_class.create!(
+            login:         "agent-default-preferences-3#{name}@example.com",
+            firstname:     'valid_agent_group_permission-3',
+            lastname:      "Agent#{name}",
+            email:         "agent-default-preferences-3#{name}@example.com",
+            password:      'agentpw',
+            active:        true,
+            roles:         roles,
+            preferences:   {
+              notification_sound: {
+                enabled: true,
+              }
+            },
+            updated_by_id: 1,
+            created_by_id: 1,
+          )
+          expect(agent3.preferences[:notification_sound][:enabled]).to be(true)
+
+          agent3.preferences[:notification_sound][:enabled] = 'false'
+          agent3.save!
+          agent3.reload
+          expect(agent3.preferences[:notification_sound][:enabled]).to be(false)
+
+          agent4 = described_class.create!(
+            login:         "agent-default-preferences-4#{name}@example.com",
+            firstname:     'valid_agent_group_permission-4',
+            lastname:      "Agent#{name}",
+            email:         "agent-default-preferences-4#{name}@example.com",
+            password:      'agentpw',
+            active:        true,
+            roles:         roles,
+            preferences:   {
+              notification_sound: {
+                enabled: false,
+              }
+            },
+            updated_by_id: 1,
+            created_by_id: 1,
+          )
+          expect(agent4.preferences[:notification_sound][:enabled]).to be(false)
+
+          agent4.preferences[:notification_sound][:enabled] = 'true'
+          agent4.save!
+          agent4.reload
+          expect(agent4.preferences[:notification_sound][:enabled]).to be(true)
+
+          agent4.preferences[:notification_sound][:enabled] = 'invalid'
+          expect { agent4.save! }.to raise_error(Exceptions::UnprocessableContent)
+
+          expect do
+            described_class.create!(
+              login:         "agent-default-preferences-5#{name}@example.com",
+              firstname:     'valid_agent_group_permission-5',
+              lastname:      "Agent#{name}",
+              email:         "agent-default-preferences-5#{name}@example.com",
+              password:      'agentpw',
+              active:        true,
+              roles:         roles,
+              preferences:   {
+                notification_sound: {
+                  enabled: 'invalid string',
+                }
+              },
+              updated_by_id: 1,
+              created_by_id: 1,
+            )
+          end.to raise_error(Exceptions::UnprocessableContent)
+        end
+      end
     end
 
     describe '#image' do
@@ -722,6 +1164,168 @@ RSpec.describe User, type: :model do
           user = create(:user)
           user.update!(image_source: value)
           expect(user.image_source).to be_nil
+        end
+      end
+    end
+
+    describe '#email' do
+      describe 'uniqueness' do
+        it 'prevents creating a second user with the same email', :aggregate_failures do
+          name = SecureRandom.uuid
+
+          email1 = "admin1-role_without_email#{name}@example.com"
+          admin1 = described_class.create!(
+            login:         email1,
+            firstname:     'Role',
+            lastname:      "Admin1#{name}",
+            email:         email1,
+            password:      'adminpw',
+            active:        true,
+            roles:         Role.where(name: %w[Admin Agent]),
+            updated_by_id: 1,
+            created_by_id: 1,
+          )
+          expect(admin1.email).to eq(email1)
+
+          expect do
+            described_class.create!(
+              login:         "#{email1}-1",
+              firstname:     'Role',
+              lastname:      "Admin1#{name}",
+              email:         email1,
+              password:      'adminpw',
+              active:        true,
+              roles:         Role.where(name: %w[Admin Agent]),
+              updated_by_id: 1,
+              created_by_id: 1,
+            )
+          end.to raise_error(ActiveRecord::RecordInvalid)
+
+          email2 = "admin2-role_without_email#{name}@example.com"
+          admin2 = described_class.create!(
+            firstname:     'Role',
+            lastname:      "Admin2#{name}",
+            email:         email2,
+            password:      'adminpw',
+            active:        true,
+            roles:         Role.where(name: %w[Admin Agent]),
+            updated_by_id: 1,
+            created_by_id: 1,
+          )
+
+          expect do
+            admin2.email = email1
+            admin2.save!
+          end.to raise_error(ActiveRecord::RecordInvalid)
+        end
+
+        context 'when "user_email_multiple_use" setting is enabled' do
+          before { Setting.set('user_email_multiple_use', true) }
+
+          it 'allows creating a second user with the same email' do
+            name = SecureRandom.uuid
+
+            email1 = "admin1-role_without_email#{name}@example.com"
+            described_class.create!(
+              login:         email1,
+              firstname:     'Role',
+              lastname:      "Admin1#{name}",
+              email:         email1,
+              password:      'adminpw',
+              active:        true,
+              roles:         Role.where(name: %w[Admin Agent]),
+              updated_by_id: 1,
+              created_by_id: 1,
+            )
+
+            admin2 = described_class.create!(
+              login:         "#{email1}-1",
+              firstname:     'Role',
+              lastname:      "Admin1#{name}",
+              email:         email1,
+              password:      'adminpw',
+              active:        true,
+              roles:         Role.where(name: %w[Admin Agent]),
+              updated_by_id: 1,
+              created_by_id: 1,
+            )
+            expect(admin2.email).to eq(email1)
+          end
+        end
+      end
+
+      describe 'without email' do
+        context 'when login was originally set equal to the (later added/removed) email' do
+          it 'generates a new login once email is cleared again', :aggregate_failures do
+            name = SecureRandom.uuid
+
+            login = "admin-role_without_email#{name}@example.com"
+            email = "admin-role_without_email#{name}@example.com"
+            admin = described_class.create_or_update(
+              login:         login,
+              firstname:     'Role',
+              lastname:      "Admin#{name}",
+              password:      'adminpw',
+              active:        true,
+              roles:         Role.where(name: %w[Admin Agent]),
+              updated_by_id: 1,
+              created_by_id: 1,
+            )
+
+            expect(admin.id).to be_present
+            expect(admin.login).to eq(login)
+            expect(admin.email).to eq('')
+
+            admin.email = email
+            admin.save!
+
+            expect(admin.login).to eq(login)
+            expect(admin.email).to eq(email)
+
+            admin.email = ''
+            admin.save!
+
+            expect(admin.id).to be_present
+            expect(admin.login).to be_present
+            expect(admin.login).not_to eq(login)
+            expect(admin.email).to eq('')
+          end
+        end
+
+        context 'when login was originally different from the (later added/removed) email' do
+          it 'keeps the original login once email is cleared again', :aggregate_failures do
+            name = SecureRandom.uuid
+
+            login = "admin-role_without_email#{name}"
+            email = "admin-role_without_email#{name}@example.com"
+            admin = described_class.create_or_update(
+              login:         login,
+              firstname:     'Role',
+              lastname:      "Admin#{name}",
+              password:      'adminpw',
+              active:        true,
+              roles:         Role.where(name: %w[Admin Agent]),
+              updated_by_id: 1,
+              created_by_id: 1,
+            )
+
+            expect(admin.id).to be_present
+            expect(admin.login).to eq(login)
+            expect(admin.email).to eq('')
+
+            admin.email = email
+            admin.save!
+
+            expect(admin.login).to eq(login)
+            expect(admin.email).to eq(email)
+
+            admin.email = ''
+            admin.save!
+
+            expect(admin.id).to be_present
+            expect(admin.login).to eq(login)
+            expect(admin.email).to eq('')
+          end
         end
       end
     end
@@ -824,6 +1428,7 @@ RSpec.describe User, type: :model do
         'AI::Analytics::Usage'               => { 'user_id' => 1 },
         'AI::TextTool'                       => { 'created_by_id' => 0, 'updated_by_id' => 0 },
         'ActivityStream'                     => { 'created_by_id' => 0 },
+        'AuditLog'                           => { 'user_id' => 1 },
         'StatsStore'                         => { 'created_by_id' => 0 },
         'TextModule'                         => { 'created_by_id' => 0, 'updated_by_id' => 0 },
         'Calendar'                           => { 'created_by_id' => 0, 'updated_by_id' => 0 },
@@ -860,6 +1465,7 @@ RSpec.describe User, type: :model do
       user_overview_sorting      = create(:'user/overview_sorting', user: user)
       recent_close               = create(:recent_close, user: user)
       ai_usage                   = create(:ai_analytics_usage, user: user)
+      audit_log                  = create(:audit_log, user: user, auditable: user)
       expect(overview.reload.user_ids).to eq([user.id])
 
       # create a chat agent for admin user (id=1) before agent user
@@ -914,6 +1520,9 @@ RSpec.describe User, type: :model do
       expect { recent_close.reload }.to raise_exception(ActiveRecord::RecordNotFound)
       expect { ai_usage.reload }.to raise_exception(ActiveRecord::RecordNotFound)
 
+      # audit logs are kept untouched to preserve the history of deleted users
+      expect(audit_log.reload.user_id).to eq(user.id)
+
       # move ownership objects
       expect { group.reload }.to change(group, :created_by_id).to(1)
       expect { job.reload }.to change(job, :updated_by_id).to(1)
@@ -943,6 +1552,14 @@ RSpec.describe User, type: :model do
       online_notification.attributes_with_association_ids
       user.destroy
       expect(online_notification.reload.attributes_with_association_ids['created_by_id']).to eq(1)
+    end
+
+    it 'destroys associated StatsStore records on destroy (#destroy_longer_required_objects)' do
+      stats_store = StatsStore.create!(stats_storable: user, key: 'some_key', data: { A: 1, B: 2 }, created_by_id: 1)
+
+      user.destroy
+
+      expect { stats_store.reload }.to raise_exception(ActiveRecord::RecordNotFound)
     end
 
     it 'does return an exception on blocking dependencies' do
@@ -1193,6 +1810,377 @@ RSpec.describe User, type: :model do
       end
     end
 
+    describe 'Last admin protection:' do
+      before do
+        described_class.with_permissions(['admin', 'admin.user']).destroy_all
+      end
+
+      it 'prevents demoting/deactivating the last admin, deactivating the Admin role, or revoking its admin permission', :aggregate_failures do
+        admin_count_inital = described_class.with_permissions('admin').count
+        expect(admin_count_inital).to eq(0)
+
+        random = SecureRandom.uuid
+        admin1 = described_class.create_or_update(
+          login:         "1admin-role#{random}@example.com",
+          firstname:     'Role',
+          lastname:      "Admin#{random}",
+          email:         "admin-role#{random}@example.com",
+          password:      'adminpw',
+          active:        true,
+          roles:         Role.where(name: %w[Admin Agent]),
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+
+        random = SecureRandom.uuid
+        admin2 = described_class.create_or_update(
+          login:         "2admin-role#{random}@example.com",
+          firstname:     'Role',
+          lastname:      "Admin#{random}",
+          email:         "admin-role#{random}@example.com",
+          password:      'adminpw',
+          active:        true,
+          roles:         Role.where(name: %w[Admin Agent]),
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+
+        random = SecureRandom.uuid
+        admin3 = described_class.create_or_update(
+          login:         "2admin-role#{random}@example.com",
+          firstname:     'Role',
+          lastname:      "Admin#{random}",
+          email:         "admin-role#{random}@example.com",
+          password:      'adminpw',
+          active:        true,
+          roles:         Role.where(name: %w[Admin Agent]),
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+
+        admin_count_inital = described_class.with_permissions('admin').count
+        expect(admin_count_inital).to eq(3)
+
+        admin1.update!(roles: Role.where(name: %w[Agent]))
+
+        admin_count_inital = described_class.with_permissions('admin').count
+        expect(admin_count_inital).to eq(2)
+
+        admin2.update!(roles: Role.where(name: %w[Agent]))
+
+        admin_count_inital = described_class.with_permissions('admin').count
+        expect(admin_count_inital).to eq(1)
+
+        expect { admin3.update!(roles: Role.where(name: %w[Agent])) }
+          .to raise_error(Exceptions::UnprocessableContent)
+
+        admin_count_inital = described_class.with_permissions('admin').count
+        expect(admin_count_inital).to eq(1)
+
+        expect do
+          admin3.active = false
+          admin3.save!
+        end.to raise_error(Exceptions::UnprocessableContent)
+
+        expect(described_class.with_permissions('admin').count).to eq(1)
+
+        admin_role = Role.find_by(name: 'Admin')
+        expect do
+          admin_role.active = false
+          admin_role.save!
+        end.to raise_error(Exceptions::UnprocessableContent)
+
+        expect { admin_role.permission_revoke('admin') }.to raise_error(Exceptions::UnprocessableContent)
+
+        expect(described_class.with_permissions('admin').count).to eq(1)
+      end
+    end
+
+    describe '#ensure_roles (defaults to Role.signup_role_ids when roles are cleared)' do
+      it 'resets roles to Role.signup_role_ids on empty assignment, and preserves explicitly (re)assigned roles', :aggregate_failures do
+        name = SecureRandom.uuid
+        admin = described_class.create_or_update(
+          login:         "admin-role#{name}@example.com",
+          firstname:     'Role',
+          lastname:      "Admin#{name}",
+          email:         "admin-role#{name}@example.com",
+          password:      'adminpw',
+          active:        true,
+          roles:         Role.where(name: %w[Admin Agent]),
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+
+        customer1 = described_class.create_or_update(
+          login:         "user-ensure-role1-#{name}@example.com",
+          firstname:     'Role',
+          lastname:      "Customer#{name}",
+          email:         "user-ensure-role1-#{name}@example.com",
+          password:      'customerpw',
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+        expect(customer1.role_ids.sort).to eq(Role.signup_role_ids)
+
+        roles = Role.where(name: 'Agent')
+        customer1.roles = roles
+        customer1.save!
+
+        expect(customer1.role_ids.count).to eq(1)
+        expect(customer1.role_ids.first).to eq(roles.first.id)
+        expect(customer1.roles.first.id).to eq(roles.first.id)
+
+        customer1.roles = []
+        customer1.save!
+
+        expect(customer1.role_ids.sort).to eq(Role.signup_role_ids)
+        customer1.destroy!
+
+        customer2 = described_class.create_or_update(
+          login:         "user-ensure-role2-#{name}@example.com",
+          firstname:     'Role',
+          lastname:      "Customer#{name}",
+          email:         "user-ensure-role2-#{name}@example.com",
+          password:      'customerpw',
+          roles:         roles,
+          active:        true,
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+        expect(customer2.role_ids.count).to eq(1)
+        expect(customer2.role_ids.first).to eq(roles.first.id)
+        expect(customer2.roles.first.id).to eq(roles.first.id)
+
+        roles = Role.where(name: 'Admin')
+        customer2.role_ids = [roles.first.id]
+        customer2.save!
+
+        expect(customer2.role_ids.count).to eq(1)
+        expect(customer2.role_ids.first).to eq(roles.first.id)
+        expect(customer2.roles.first.id).to eq(roles.first.id)
+
+        customer2.roles = []
+        customer2.save!
+
+        expect(customer2.role_ids.sort).to eq(Role.signup_role_ids)
+        customer2.destroy!
+
+        customer3 = described_class.create_or_update(
+          login:         "user-ensure-role2-#{name}@example.com",
+          firstname:     'Role',
+          lastname:      "Customer#{name}",
+          email:         "user-ensure-role2-#{name}@example.com",
+          password:      'customerpw',
+          roles:         roles,
+          active:        true,
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+
+        customer3.roles = Role.where(name: %w[Admin Agent])
+        customer3.roles.each do |role|
+          expect(role.name).not_to eq('Customer')
+        end
+
+        customer3.roles = Role.where(name: 'Admin')
+        customer3.roles.each do |role|
+          expect(role.name).not_to eq('Customer')
+        end
+
+        customer3.roles = Role.where(name: 'Agent')
+        customer3.roles.each do |role|
+          expect(role.name).not_to eq('Customer')
+        end
+
+        customer3.destroy!
+        admin.destroy!
+      end
+    end
+
+    describe 'Role conflicts via Role#preferences[:not]' do
+      it 'raises RuntimeError when assigning mutually exclusive roles to a user', :aggregate_failures do
+        test_role_1 = Role.create_or_update(
+          name:          'Test1',
+          note:          'To configure your system.',
+          preferences:   {
+            not: ['Test3'],
+          },
+          updated_by_id: 1,
+          created_by_id: 1
+        )
+        test_role_2 = Role.create_or_update(
+          name:          'Test2',
+          note:          'To work on Tickets.',
+          preferences:   {
+            not: ['Test3'],
+          },
+          updated_by_id: 1,
+          created_by_id: 1
+        )
+        test_role_3 = Role.create_or_update(
+          name:          'Test3',
+          note:          'People who create Tickets ask for help.',
+          preferences:   {
+            not: %w[Test1 Test2],
+          },
+          updated_by_id: 1,
+          created_by_id: 1
+        )
+        test_role_4 = Role.create_or_update(
+          name:          'Test4',
+          note:          'Access the report area.',
+          preferences:   {},
+          created_by_id: 1,
+          updated_by_id: 1,
+        )
+        name = SecureRandom.uuid
+
+        expect do
+          described_class.create_or_update(
+            login:         "customer-role#{name}@example.com",
+            firstname:     'Role',
+            lastname:      "Customer#{name}",
+            email:         "customer-role#{name}@example.com",
+            password:      'customerpw',
+            active:        true,
+            roles:         [test_role_1, test_role_3],
+            updated_by_id: 1,
+            created_by_id: 1,
+          )
+        end.to raise_error(RuntimeError)
+
+        expect do
+          described_class.create_or_update(
+            login:         "customer-role#{name}@example.com",
+            firstname:     'Role',
+            lastname:      "Customer#{name}",
+            email:         "customer-role#{name}@example.com",
+            password:      'customerpw',
+            active:        true,
+            roles:         [test_role_2, test_role_3],
+            updated_by_id: 1,
+            created_by_id: 1,
+          )
+        end.to raise_error(RuntimeError)
+
+        user1 = described_class.create_or_update(
+          login:         "customer-role#{name}@example.com",
+          firstname:     'Role',
+          lastname:      "Customer#{name}",
+          email:         "customer-role#{name}@example.com",
+          password:      'customerpw',
+          active:        true,
+          roles:         [test_role_1, test_role_2],
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+        expect(user1.role_ids).to include(test_role_1.id)
+        expect(user1.role_ids).to include(test_role_2.id)
+        expect(user1.role_ids).not_to include(test_role_3.id)
+        expect(user1.role_ids).not_to include(test_role_4.id)
+
+        user1 = described_class.create_or_update(
+          login:         "customer-role#{name}@example.com",
+          firstname:     'Role',
+          lastname:      "Customer#{name}",
+          email:         "customer-role#{name}@example.com",
+          password:      'customerpw',
+          active:        true,
+          roles:         [test_role_1, test_role_4],
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+        expect(user1.role_ids).to include(test_role_1.id)
+        expect(user1.role_ids).not_to include(test_role_2.id)
+        expect(user1.role_ids).not_to include(test_role_3.id)
+        expect(user1.role_ids).to include(test_role_4.id)
+
+        expect do
+          described_class.create_or_update(
+            login:         "customer-role#{name}@example.com",
+            firstname:     'Role',
+            lastname:      "Customer#{name}",
+            email:         "customer-role#{name}@example.com",
+            password:      'customerpw',
+            active:        true,
+            roles:         [test_role_1, test_role_3],
+            updated_by_id: 1,
+            created_by_id: 1,
+          )
+        end.to raise_error(RuntimeError)
+
+        expect do
+          described_class.create_or_update(
+            login:         "customer-role#{name}@example.com",
+            firstname:     'Role',
+            lastname:      "Customer#{name}",
+            email:         "customer-role#{name}@example.com",
+            password:      'customerpw',
+            active:        true,
+            roles:         [test_role_2, test_role_3],
+            updated_by_id: 1,
+            created_by_id: 1,
+          )
+        end.to raise_error(RuntimeError)
+
+        expect(user1.role_ids).to include(test_role_1.id)
+        expect(user1.role_ids).not_to include(test_role_2.id)
+        expect(user1.role_ids).not_to include(test_role_3.id)
+        expect(user1.role_ids).to include(test_role_4.id)
+      end
+    end
+
+    describe 'Group access reflects agent active state and role changes:' do
+      it "updates User.group_access('full') as agents are (de)activated or lose the Agent role", :aggregate_failures do
+        name = SecureRandom.uuid
+        group = Group.create!(
+          name:          "ValidAgentGroupPermission-#{name}",
+          active:        true,
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+        roles = Role.where(name: 'Agent')
+        described_class.create_or_update(
+          login:         "valid_agent_permission-1#{name}@example.com",
+          firstname:     'valid_agent_group_permission-1',
+          lastname:      "Agent#{name}",
+          email:         "valid_agent_permission-1#{name}@example.com",
+          password:      'agentpw',
+          active:        true,
+          roles:         roles,
+          groups:        [group],
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+        agent2 = described_class.create_or_update(
+          login:         "valid_agent_permission-2#{name}@example.com",
+          firstname:     'valid_agent_group_permission-2',
+          lastname:      "Agent#{name}",
+          email:         "valid_agent_permission-2#{name}@example.com",
+          password:      'agentpw',
+          active:        true,
+          roles:         roles,
+          groups:        [group],
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+        expect(described_class.group_access(group.id, 'full').count).to eq(2)
+
+        agent2.active = false
+        agent2.save!
+        expect(described_class.group_access(group.id, 'full').count).to eq(1)
+
+        agent2.active = true
+        agent2.save!
+        expect(described_class.group_access(group.id, 'full').count).to eq(2)
+
+        roles = Role.where(name: 'Customer')
+        agent2.roles = roles
+        agent2.save!
+        expect(described_class.group_access(group.id, 'full').count).to eq(1)
+      end
+    end
+
     describe 'Touching associations on update:' do
       subject!(:user) { create(:customer) }
 
@@ -1337,6 +2325,12 @@ RSpec.describe User, type: :model do
 
   describe 'Assign user to multiple organizations #1573' do
     context 'when importing users via csv' do
+      # CSV import diffs records by their attributes, so it needs the unredacted ones - in the
+      # application it runs either as an admin or as background work
+      around do |example|
+        UserInfo.with_system_context { example.run }
+      end
+
       let(:organization1) { create(:organization) }
       let(:organization2) { create(:organization) }
       let(:organization3) { create(:organization) }
@@ -1561,6 +2555,351 @@ RSpec.describe User, type: :model do
       user = create(:user, organization: organization1, organizations: [organization2, organization3])
 
       expect(user.all_organization_ids).to contain_exactly(organization1.id, organization2.id, organization3.id)
+    end
+  end
+
+  describe 'Legacy scenarios (migrated from test/unit/user_test.rb)' do
+    describe 'creating and updating users with edge-case firstname/lastname/email values' do
+      let(:tests) do
+        [
+          {
+            name:          '#1 - simple create',
+            create:        {
+              firstname:     'Firstname',
+              lastname:      'Lastname',
+              email:         'some@example.com',
+              login:         'some@example.com',
+              updated_by_id: 1,
+              created_by_id: 1,
+            },
+            create_verify: {
+              firstname: 'Firstname',
+              lastname:  'Lastname',
+              image:     nil,
+              fullname:  'Firstname Lastname',
+              email:     'some@example.com',
+              login:     'some@example.com',
+            },
+          },
+          {
+            name:          '#2 - simple create - no lastname',
+            create:        {
+              firstname:     'Firstname Lastname',
+              lastname:      '',
+              email:         'some@example.com',
+              login:         'some@example.com',
+              updated_by_id: 1,
+              created_by_id: 1,
+            },
+            create_verify: {
+              firstname: 'Firstname',
+              lastname:  'Lastname',
+              image:     nil,
+              email:     'some@example.com',
+              login:     'some@example.com',
+            },
+          },
+          {
+            name:          '#3 - simple create - no firstname',
+            create:        {
+              firstname:     '',
+              lastname:      'Firstname Lastname',
+              email:         'some@example.com',
+              login:         'some@example.com',
+              updated_by_id: 1,
+              created_by_id: 1,
+            },
+            create_verify: {
+              firstname: 'Firstname',
+              lastname:  'Lastname',
+              image:     nil,
+              email:     'some@example.com',
+              login:     'some@example.com',
+            },
+          },
+          {
+            name:          '#4 - simple create - nil as lastname',
+            create:        {
+              firstname:     'Firstname Lastname',
+              lastname:      '',
+              email:         'some@example.com',
+              login:         'some@example.com',
+              updated_by_id: 1,
+              created_by_id: 1,
+            },
+            create_verify: {
+              firstname: 'Firstname',
+              lastname:  'Lastname',
+              image:     nil,
+              email:     'some@example.com',
+              login:     'some@example.com',
+            },
+          },
+          {
+            name:          '#5 - simple create - no lastname, firstname with ","',
+            create:        {
+              firstname:     'Lastname, Firstname',
+              lastname:      '',
+              email:         'some@example.com',
+              login:         'some@example.com',
+              updated_by_id: 1,
+              created_by_id: 1,
+            },
+            create_verify: {
+              firstname: 'Firstname',
+              lastname:  'Lastname',
+              email:     'some@example.com',
+              login:     'some@example.com',
+            },
+          },
+          {
+            name:          '#6 - simple create - no lastname/firstname',
+            create:        {
+              firstname:     '',
+              lastname:      '',
+              email:         'firstname.lastname@example.com',
+              login:         'login-1',
+              updated_by_id: 1,
+              created_by_id: 1,
+            },
+            create_verify: {
+              firstname: 'Firstname',
+              lastname:  'Lastname',
+              fullname:  'Firstname Lastname',
+              email:     'firstname.lastname@example.com',
+              login:     'login-1',
+            },
+          },
+          {
+            name:          '#7 - simple create - no lastname/firstnam',
+            create:        {
+              firstname:     '',
+              lastname:      '',
+              email:         'FIRSTNAME.lastname@example.com',
+              login:         'login-2',
+              updated_by_id: 1,
+              created_by_id: 1,
+            },
+            create_verify: {
+              firstname: 'Firstname',
+              lastname:  'Lastname',
+              email:     'firstname.lastname@example.com',
+              login:     'login-2',
+            },
+          },
+          {
+            name:          '#8 - simple create - nill as fristname and lastname',
+            create:        {
+              firstname:     '',
+              lastname:      '',
+              email:         'FIRSTNAME.lastname@example.com',
+              login:         'login-3',
+              updated_by_id: 1,
+              created_by_id: 1,
+            },
+            create_verify: {
+              firstname: 'Firstname',
+              lastname:  'Lastname',
+              email:     'firstname.lastname@example.com',
+              login:     'login-3',
+            },
+          },
+          {
+            name:          '#11 - update create with login/email check',
+            create:        {
+              firstname:     '',
+              lastname:      '',
+              email:         'caoyaoewfzfw@21222cn.com',
+              updated_by_id: 1,
+              created_by_id: 1,
+            },
+            create_verify: {
+              firstname: '',
+              lastname:  '',
+              fullname:  'caoyaoewfzfw@21222cn.com',
+              email:     'caoyaoewfzfw@21222cn.com',
+              login:     'caoyaoewfzfw@21222cn.com',
+            },
+            update:        {
+              email: 'caoyaoewfzfw@212224cn.com',
+            },
+            update_verify: {
+              firstname: '',
+              lastname:  '',
+              email:     'caoyaoewfzfw@212224cn.com',
+              fullname:  'caoyaoewfzfw@212224cn.com',
+              login:     'caoyaoewfzfw@212224cn.com',
+            }
+          },
+          {
+            name:          '#12 - update create with login/email check',
+            create:        {
+              firstname:     'Firstname',
+              lastname:      'Lastname',
+              email:         'some_tEst11@example.com',
+              updated_by_id: 1,
+              created_by_id: 1,
+            },
+            create_verify: {
+              firstname: 'Firstname',
+              lastname:  'Lastname',
+              fullname:  'Firstname Lastname',
+              email:     'some_test11@example.com',
+            },
+            update:        {
+              email: 'some_Test11-1@example.com',
+            },
+            update_verify: {
+              firstname: 'Firstname',
+              lastname:  'Lastname',
+              email:     'some_test11-1@example.com',
+              fullname:  'Firstname Lastname',
+              login:     'some_test11-1@example.com',
+            }
+          },
+        ]
+      end
+
+      around do |example|
+        default_disable_in_test_env = Service::Image::Zammad.const_get(:DISABLE_IN_TEST_ENV)
+        silence_warnings { Service::Image::Zammad.const_set(:DISABLE_IN_TEST_ENV, false) }
+
+        example.run
+
+        silence_warnings { Service::Image::Zammad.const_set(:DISABLE_IN_TEST_ENV, default_disable_in_test_env) }
+      end
+
+      it 'derives fullname/firstname/lastname/email/login per test case', :aggregate_failures do
+        tests.each do |test|
+          user = described_class.find_by(login: test[:create][:login])
+          user&.destroy!
+
+          user = described_class.create!(test[:create])
+
+          test[:create_verify].each do |key, value|
+            next if key == :image_md5
+
+            if user.respond_to?(key)
+              result = user.send(key)
+              if value.nil?
+                expect(result).to be_nil, "create check #{key} in (#{test[:name]})"
+              else
+                expect(result).to eq(value), "create check #{key} in (#{test[:name]})"
+              end
+            else
+              expect(user[key]).to eq(value), "create check #{key} in (#{test[:name]})"
+            end
+          end
+
+          if test[:update]
+            user.update!(test[:update])
+
+            test[:update_verify].each do |key, value|
+              next if key == :image_md5
+
+              if user.respond_to?(key)
+                expect(user.send(key)).to eq(value), "update check #{key} in (#{test[:name]})"
+              else
+                expect(user[key]).to eq(value), "update check #{key} in (#{test[:name]})"
+              end
+            end
+          end
+
+          user.destroy!
+        end
+      end
+    end
+
+    describe 'names and emails with unusual whitespace characters' do
+      it 'strips various kinds of surrounding/embedded whitespace from firstname/lastname/email', :aggregate_failures do
+        name = "#{Time.zone.now.to_i}-#{SecureRandom.uuid}"
+        email = "customer_email#{name}@example.com"
+        customer = described_class.create!(
+          firstname:     'Role',
+          lastname:      "Customer#{name}",
+          email:         " #{email} ",
+          password:      'customerpw',
+          active:        true,
+          roles:         Role.where(name: %w[Customer]),
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+        expect(customer).to be_present
+        expect(customer.email).to eq(email)
+        customer.destroy!
+
+        name = "#{Time.zone.now.to_i}-#{SecureRandom.uuid}"
+        email = "customer_email#{name}@example.com"
+        customer = described_class.create!(
+          firstname:     "\u{00a0}\u{00a0}Role",
+          lastname:      "Customer#{name} \u{00a0}",
+          email:         "\u{00a0}#{email}\u{00a0}",
+          password:      'customerpw',
+          active:        true,
+          roles:         Role.where(name: %w[Customer]),
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+        expect(customer).to be_present
+        expect(customer.firstname).to eq('Role')
+        expect(customer.lastname).to eq("Customer#{name}")
+        expect(customer.email).to eq(email)
+        customer.destroy!
+
+        name = "#{Time.zone.now.to_i}-#{SecureRandom.uuid}"
+        email = "customer_email#{name}@example.com"
+        customer = described_class.create!(
+          firstname:     "\u{200B}\u{200B}Role",
+          lastname:      "Customer#{name} \u{200B}",
+          email:         "\u{200B}#{email}\u{200B}",
+          password:      'customerpw',
+          active:        true,
+          roles:         Role.where(name: %w[Customer]),
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+        expect(customer).to be_present
+        expect(customer.firstname).to eq('Role')
+        expect(customer.lastname).to eq("Customer#{name}")
+        expect(customer.email).to eq(email)
+        customer.destroy!
+
+        name = "#{Time.zone.now.to_i}-#{SecureRandom.uuid}"
+        email = "customer_email#{name}@example.com"
+        customer = described_class.create!(
+          firstname:     "\u{200B}\u{200B}Role\u{00a0}",
+          lastname:      "\u{00a0}\u{00a0}Customer#{name} \u{200B}",
+          email:         "\u{200B}#{email}\u{200B}",
+          password:      'customerpw',
+          active:        true,
+          roles:         Role.where(name: %w[Customer]),
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+        expect(customer).to be_present
+        expect(customer.firstname).to eq('Role')
+        expect(customer.lastname).to eq("Customer#{name}")
+        expect(customer.email).to eq(email)
+        customer.destroy!
+
+        name = "#{Time.zone.now.to_i}-#{SecureRandom.uuid}"
+        email = "customer_email#{name}@example.com"
+        customer = described_class.create!(
+          firstname:     "\u{200a}\u{200b}\u{202F}\u{205F}Role\u{2007}\u{2008}",
+          lastname:      "\u{00a0}\u{00a0}Customer#{name}\u{3000}\u{FEFF}\u{2000}",
+          email:         "\u{200B}#{email}\u{200B}\u{2007}\u{2008}",
+          password:      'customerpw',
+          active:        true,
+          roles:         Role.where(name: %w[Customer]),
+          updated_by_id: 1,
+          created_by_id: 1,
+        )
+        expect(customer).to be_present
+        expect(customer.firstname).to eq('Role')
+        expect(customer.lastname).to eq("Customer#{name}")
+        expect(customer.email).to eq(email)
+        customer.destroy!
+      end
     end
   end
 end

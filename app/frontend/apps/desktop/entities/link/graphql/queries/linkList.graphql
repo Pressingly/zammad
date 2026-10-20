@@ -1,0 +1,21 @@
+query linkList($objectId: ID!, $targetType: String!) {
+  linkList(objectId: $objectId, targetType: $targetType) {
+    type
+    item {
+      __typename
+      ... on Ticket {
+        id
+        internalId
+        title
+        state {
+          id
+          name
+        }
+        stateColorCode
+      }
+      ... on KnowledgeBaseAnswerTranslation {
+        ...knowledgeBaseAnswerTranslation
+      }
+    }
+  }
+}

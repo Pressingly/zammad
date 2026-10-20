@@ -1,25 +1,40 @@
 // Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
+import { flushPromises } from '@vue/test-utils'
 import { beforeEach } from 'vitest'
 import { computed, ref } from 'vue'
 
+import { getGraphQLMockCalls } from '#tests/graphql/builders/mocks.ts'
 import renderComponent from '#tests/support/components/renderComponent.ts'
+import { mockApplicationConfig } from '#tests/support/mock-applicationConfig.ts'
 import { mockPermissions } from '#tests/support/mock-permissions.ts'
 import { mockRouterHooks } from '#tests/support/mock-vue-router.ts'
 
 import { createDummyTicket } from '#shared/entities/ticket-article/__tests__/mocks/ticket.ts'
+import { convertToGraphQLId } from '#shared/graphql/utils.ts'
 
+// The plugin registry globs all plugin modules eagerly, and the sidebar content below reaches
+//   `useTicketSidebar` (which imports the registry) again. Pull the registry in first, so the glob
+//   cannot run while `information.ts` is still initializing.
+import '#desktop/pages/ticket/components/TicketSidebar/plugins/index.ts'
+import { LinkListDocument } from '#desktop/entities/link/graphql/queries/linkList.api.ts'
+import { mockLinkListQuery } from '#desktop/entities/link/graphql/queries/linkList.mocks.ts'
 import plugin from '#desktop/pages/ticket/components/TicketSidebar/plugins/information.ts'
 import TicketSidebarInformationContent from '#desktop/pages/ticket/components/TicketSidebar/TicketSidebarInformation/TicketSidebarInformationContent.vue'
 import { TICKET_KEY } from '#desktop/pages/ticket/composables/useTicketInformation.ts'
-import { mockLinkListQuery } from '#desktop/pages/ticket/graphql/queries/linkList.mocks.ts'
+import { TICKET_SIDEBAR_SYMBOL } from '#desktop/pages/ticket/composables/useTicketSidebar.ts'
+import { TicketAiRelatedKnowledgeBaseAnswersDocument } from '#desktop/pages/ticket/graphql/queries/ticketAIRelatedKnowledgeBaseAnswers.api.ts'
+import { mockTicketAiRelatedKnowledgeBaseAnswersQuery } from '#desktop/pages/ticket/graphql/queries/ticketAIRelatedKnowledgeBaseAnswers.mocks.ts'
 import { TicketSidebarScreenType } from '#desktop/pages/ticket/types/sidebar.ts'
 
 const defaultTicket = createDummyTicket()
 
 mockRouterHooks()
 
-const renderInformationSidebar = (ticket = defaultTicket) =>
+const renderInformationSidebar = (
+  ticket = defaultTicket,
+  { isTicketEditable = true }: { isTicketEditable?: boolean } = {},
+) =>
   renderComponent(TicketSidebarInformationContent, {
     props: {
       context: {
@@ -30,6 +45,19 @@ const renderInformationSidebar = (ticket = defaultTicket) =>
     },
     form: true,
     router: true,
+    // Adds the answer route (related-knowledge answer links resolve to it) on top of the
+    //   suite's usual default routes - passing `routerRoutes` at all replaces them wholesale.
+    routerRoutes: [
+      { path: '/', name: 'Dashboard', component: { template: 'Welcome to zammad.' } },
+      { path: '/example', name: 'Example', component: { template: 'This is a example page.' } },
+      { path: '/:pathMatch(.*)*', name: 'Error', component: { template: 'Error page' } },
+      { path: '/search/:searchTerm?', name: 'Search', component: { template: 'search' } },
+      {
+        path: '/knowledge-base/locale/:localeCode/answer/:answerInternalId',
+        name: 'KnowledgeBaseAnswer',
+        component: { template: '<div />' },
+      },
+    ],
     provide: [
       [
         TICKET_KEY,
@@ -38,11 +66,13 @@ const renderInformationSidebar = (ticket = defaultTicket) =>
           ticket: computed(() => ticket),
           form: ref(),
           showTicketArticleReplyForm: () => {},
-          isTicketEditable: computed(() => true),
+          isTicketEditable: computed(() => isTicketEditable),
           newTicketArticlePresent: ref(false),
           ticketInternalId: computed(() => ticket.internalId),
         },
       ],
+      // The AI draft action hands the active sidebar to the flyout it opens.
+      [TICKET_SIDEBAR_SYMBOL, { activeSidebar: ref('information') }],
     ],
   })
 
@@ -118,6 +148,7 @@ describe('TicketSidebarInformationContent', () => {
       const wrapper = renderInformationSidebar({
         ...defaultTicket,
         policy: {
+          __typename: 'PolicyTicket',
           update: false,
           agentReadAccess: true,
         },
@@ -138,6 +169,7 @@ describe('TicketSidebarInformationContent', () => {
       const wrapper = renderInformationSidebar({
         ...defaultTicket,
         policy: {
+          __typename: 'PolicyTicket',
           update: true,
           agentReadAccess: false,
         },
@@ -213,6 +245,89 @@ describe('TicketSidebarInformationContent', () => {
       expect(
         wrapper.queryByRole('heading', { name: 'Accounted time', level: 3 }),
       ).not.toBeInTheDocument()
+    })
+  })
+
+  describe('related knowledge', () => {
+    // Order matters: `mockApplicationConfig` merges into the shared application store, which
+    //   isn't reset between tests in this file, so the "hides" case (asserting the section's
+    //   absence with the default/unmocked kb config) must run before any test enables it.
+    it('hides the section on a non-editable ticket with no linked or suggested answers', () => {
+      mockPermissions(['ticket.agent'])
+      mockLinkListQuery({ linkList: [] })
+
+      const wrapper = renderInformationSidebar(defaultTicket, { isTicketEditable: false })
+
+      expect(
+        wrapper.queryByRole('heading', { name: 'Related knowledge', level: 3 }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('shows AI-suggested answers on a non-editable ticket with no linked answers', async () => {
+      mockPermissions(['ticket.agent', 'knowledge_base.reader'])
+      mockApplicationConfig({
+        kb_active: true,
+        vectordb_enabled: true,
+        ai_provider: true,
+        ai_assistance_kb_answer_suggestions: true,
+      })
+      mockLinkListQuery({ linkList: [] })
+      mockTicketAiRelatedKnowledgeBaseAnswersQuery({
+        ticketAIRelatedKnowledgeBaseAnswers: {
+          pending: false,
+          answers: [
+            {
+              score: 0.9,
+              translation: {
+                id: convertToGraphQLId('KnowledgeBase::Answer::Translation', 1),
+                title: 'Reset your password',
+                answer: {
+                  id: convertToGraphQLId('KnowledgeBase::Answer', 1),
+                  category: { id: convertToGraphQLId('KnowledgeBase::Category', 1) },
+                },
+              },
+            },
+          ],
+        },
+      })
+
+      const wrapper = renderInformationSidebar(defaultTicket, { isTicketEditable: false })
+
+      expect(
+        await wrapper.findByRole('heading', { name: 'Related knowledge', level: 3 }),
+      ).toBeInTheDocument()
+      expect(await wrapper.findByText('Reset your password')).toBeInTheDocument()
+    })
+
+    // An agent can be the customer of a ticket in a group they have no access to. They see it in
+    //   the customer view, where the server denies both the link list and the suggestions search -
+    //   so neither may be requested.
+    it('requests nothing for an agent who only has customer access to the ticket', async () => {
+      mockPermissions(['ticket.agent', 'knowledge_base.reader'])
+      mockApplicationConfig({
+        kb_active: true,
+        ai_provider: true,
+        ai_assistance_kb_answer_suggestions: true,
+      })
+      mockLinkListQuery({ linkList: [] })
+      mockTicketAiRelatedKnowledgeBaseAnswersQuery({
+        ticketAIRelatedKnowledgeBaseAnswers: { pending: false, answers: [] },
+      })
+
+      const ticket = createDummyTicket({
+        defaultPolicy: { update: true, agentReadAccess: false },
+      })
+
+      const wrapper = renderInformationSidebar(ticket)
+
+      await flushPromises()
+
+      expect(
+        wrapper.queryByRole('heading', { name: 'Related knowledge', level: 3 }),
+      ).not.toBeInTheDocument()
+
+      expect(getGraphQLMockCalls(LinkListDocument)).toHaveLength(0)
+      expect(getGraphQLMockCalls(TicketAiRelatedKnowledgeBaseAnswersDocument)).toHaveLength(0)
     })
   })
 })

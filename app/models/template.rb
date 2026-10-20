@@ -2,6 +2,7 @@
 
 class Template < ApplicationModel
   include ChecksClientNotification
+  include HasAuditLogs
   include HasSearchIndexBackend
   include CanSelector
   include CanSearch
@@ -12,7 +13,8 @@ class Template < ApplicationModel
   scope :sorted, -> { order(:name) }
 
   store     :options
-  validates :name, presence: true
+  validates :name,    presence: true
+  validates :options, 'validations/verify_perform_rules': true
 
   association_attributes_ignored :user
 end

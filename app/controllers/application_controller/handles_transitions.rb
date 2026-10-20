@@ -13,11 +13,24 @@ module ApplicationController::HandlesTransitions
     ApplicationHandleInfo.current = 'application_server'
     PushMessages.init
 
-    yield
+    # Registered as a callable because authentication has not run yet at this
+    # point - current_user is only available once a commit actually happens.
+    TransactionDispatcher.request_options = -> { transaction_dispatch_options }
 
+    yield
+  ensure
     TransactionDispatcher.commit
     PushMessages.finish
-  ensure
+
+    TransactionDispatcher.request_options = nil
     ApplicationHandleInfo.current = nil
+    UserInfo.reset
+  end
+
+  def transaction_dispatch_options
+    return {} if !current_user&.permissions?(%w[ticket.agent admin])
+    return {} if !request.headers['X-Zammad-Suppress-Notifications'].to_s.casecmp?('true')
+
+    { disable_notification: true }
   end
 end

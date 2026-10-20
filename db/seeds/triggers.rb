@@ -26,6 +26,7 @@ Trigger.create_or_update(
   },
   perform:                  {
     'notification.email' => {
+      # rubocop:disable-next Lint/InterpolationCheck
       'body'      => '<div>Your request <b>(#{config.ticket_hook}#{ticket.number})</b> has been received and will be reviewed by our support staff.</div>
 <br/>
 <div>To provide additional information, please reply to this email or click on the following link (for initial login, please request a new password):
@@ -67,6 +68,7 @@ Trigger.create_or_update(
   },
   perform:                  {
     'notification.email' => {
+      # rubocop:disable Lint/InterpolationCheck
       'body'      => '<div>Your follow-up for <b>(#{config.ticket_hook}#{ticket.number})</b> has been received and will be reviewed by our support staff.</div>
 <br/>
 <div>To provide additional information, please reply to this email or click on the following link:
@@ -77,7 +79,8 @@ Trigger.create_or_update(
 <br/>
 <div><i><a href="https://zammad.com">Zammad</a>, your customer support system</i></div>',
       'recipient' => 'article_last_sender',
-      'subject'   => 'Thanks for your follow-up (#{ticket.title})', # rubocop:disable Lint/InterpolationCheck
+      'subject'   => 'Thanks for your follow-up (#{ticket.title})',
+      # rubocop:enable Lint/InterpolationCheck
     },
   },
   activator:                'action',
@@ -99,6 +102,7 @@ Trigger.create_or_update(
   },
   perform:                  {
     'notification.email' => {
+      # rubocop:disable Lint/InterpolationCheck
       'body'      => '<p>The owner of ticket (Ticket##{ticket.number}) has changed and is now "#{ticket.owner.firstname} #{ticket.owner.lastname}".<p>
 <br/>
 <p>To provide additional information, please reply to this email or click on the following link:
@@ -107,7 +111,8 @@ Trigger.create_or_update(
 <br/>
 <p><i><a href="https://zammad.com">Zammad</a>, your customer support system</i></p>',
       'recipient' => 'ticket_customer',
-      'subject'   => 'Owner has changed (#{ticket.title})', # rubocop:disable Lint/InterpolationCheck
+      'subject'   => 'Owner has changed (#{ticket.title})',
+      # rubocop:enable Lint/InterpolationCheck
     },
   },
   activator:                'action',

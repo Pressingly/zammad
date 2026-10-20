@@ -1,9 +1,23 @@
 # Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
 require 'rails_helper'
+require 'models/concerns/has_audit_logs_examples'
 require 'models/application_model_examples'
 
 RSpec.describe Overview, type: :model do
+  it_behaves_like 'HasAuditLogs', update_attribute: 'name', update_value: 'Some updated name'
+
+  describe 'audit log ignored attributes' do
+    before { Setting.set('system_init_done', true) }
+
+    it 'creates no audit log entry for prio updates when overviews are reordered' do
+      overview = create(:overview)
+
+      expect { overview.update!(prio: 42) }
+        .not_to change(AuditLog.where(auditable_type: 'Overview'), :count)
+    end
+  end
+
   it_behaves_like 'ApplicationModel',
                   can_assets:        { associations: :users, selectors: :condition },
                   can_create_update: { unique_name: false }
@@ -114,6 +128,26 @@ RSpec.describe Overview, type: :model do
   describe 'Make conditions AND/OR and thus enable several conditions of same type #2185' do
     it 'does create overviews with the expert structure' do
       expect { create(:overview, :condition_expert) }.not_to raise_error
+    end
+  end
+
+  describe 'order direction validation', :aggregate_failures do
+    it 'accepts ASC and DESC (case-insensitive)' do
+      expect(build(:overview, order: { by: 'created_at', direction: 'ASC' }, group_direction: 'desc')).to be_valid
+    end
+
+    it 'rejects a malicious order direction' do
+      overview = build(:overview, order: { by: 'created_at', direction: "DESC, (SELECT CAST('x' AS integer))" })
+
+      expect(overview).not_to be_valid
+      expect(overview.errors.full_messages.join).to include('Invalid order direction')
+    end
+
+    it 'rejects a malicious group direction' do
+      overview = build(:overview, group_direction: 'ASC; DROP TABLE tickets')
+
+      expect(overview).not_to be_valid
+      expect(overview.errors.full_messages.join).to include('Invalid order direction')
     end
   end
 

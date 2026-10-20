@@ -35,9 +35,18 @@ The CoffeeScript frontend uses REST controllers.
 
 ## General Guidelines
 
-- All new files must include the Zammad copyright header.
+- All new files except Markdown files (`*.md`) must include the Zammad copyright header.
 - Never edit translation files (`i18n/*.po`) directly —
   translations are managed via translations.zammad.org.
+
+### UI Principles
+
+- Icon-only buttons need `v-tooltip` supplying the accessible name.
+- Hover/focus-only visible actions need to display on touch fallback
+- Responsive grids should adapt to their container
+- Translatable strings: use complete, meaningful source strings,
+  sentence case for English source strings, and check for existing
+  near-duplicate strings before adding new ones.
 
 ## Essential Commands
 
@@ -53,10 +62,10 @@ bundle exec rubocop --autocorrect app/path/to/file.rb                        # L
 Always use pnpm for frontend and cross-stack commands.
 
 ```bash
-pnpm test app/frontend/path/to/file.spec.ts # Run specific Vitest test
-pnpm lint                                   # Run all linters
-pnpm generate-graphql-api                   # Regenerate GraphQL types after schema changes
-pnpm generate-setting-types                 # Regenerate Config types after setting changes
+pnpm test --run app/frontend/path/to/file.spec.ts # Run specific Vitest test (never add `--`)
+pnpm lint                                         # Run all linters
+pnpm generate-graphql-api                         # Regenerate GraphQL types after schema changes
+pnpm generate-setting-types                       # Regenerate Config types after setting changes
 ```
 
 ## Development Lifecycle
@@ -64,6 +73,9 @@ pnpm generate-setting-types                 # Regenerate Config types after sett
 Issues are tracked on **GitHub**, code is developed on a self-hosted **GitLab**.
 GitHub hosts a read-only mirror. The agent uses the **GitHub MCP server** for
 issues and **`glab` CLI** for GitLab operations.
+
+Stories are refined and broken down into task issues before this lifecycle
+starts (`/refine-story` → `/plan-story`). Bugs skip that and enter it directly.
 
 Lifecycle: Understand → Research → Plan → Branch (`/prepare-issue-branch`) →
 Implement → Test → Commit → Review → MR (`/create-mr`) → Cherry-pick
@@ -80,7 +92,42 @@ You MUST read the relevant file(s) below before responding when working on that 
   mutations, queries, and subscriptions
 - `.dev/agent_docs/frontend_patterns.md` — Vue component conventions,
   composables, routing, and the form system
+- `.dev/agent_docs/frontend_addon_layer.md` — How an addon extends the Vue
+  frontend via the build-time weave (Vapor-safe, multi-addon)
+- `.dev/agent_docs/legacy_model_patterns.md` — Concerns needed by new models
+  used in the legacy stack: REST assets (one-to-one relations only) and
+  client notifications
 - `.dev/agent_docs/testing.md` — How to write and run backend and frontend tests
+- `.dev/agent_docs/testing_services_and_graphql.md` — How to split spec
+  coverage between a service and the query, mutation or subscription that
+  calls it
 - `.dev/agent_docs/service_patterns.md` — Service object conventions and structure
+- `.dev/agent_docs/knowledge_base_patterns.md` — Knowledge base rules for the
+  new stack (Vue/GraphQL/services) only: the single active knowledge base and
+  the deliberate exceptions to it
 - `.dev/agent_docs/database_migrations.md` — How to write migrations and work
   with seeds
+
+## CodeGraph
+
+In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the repo
+root), reach for it BEFORE grep/find or reading files when you need to understand
+or locate code:
+
+- **MCP tool** (when available): `codegraph_explore` answers most code questions
+  in one call — the relevant symbols' verbatim source plus the call paths between
+  them, including dynamic-dispatch hops grep can't follow. Name a file or symbol
+  in the query to read its current line-numbered source. If it's listed but
+  deferred, load it by name via tool search.
+- **Shell** (always works): `pnpm exec codegraph explore "<symbol names or question>"`
+  prints the same output — `codegraph` is a local dev dependency, so the bare
+  command is not on `PATH`.
+
+Setup is per developer: `pnpm codegraph:install` indexes this checkout and registers
+the server with the agent harnesses it finds (Claude Code, Cursor, Codex CLI,
+opencode, …). Say yes when it offers to put the CLI on `PATH`: that is how they
+launch it. `pnpm codegraph:uninstall` reverts it. Nothing lands in a commit —
+`.codegraph/` and `.mcp.json` are gitignored, and the harness registration lives in
+each tool's own config outside the repo.
+
+If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is the user's decision.

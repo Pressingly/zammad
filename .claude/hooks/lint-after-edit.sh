@@ -4,7 +4,15 @@
 # Hook: lint all changed/new files with the appropriate tools.
 # Collects modified and untracked files from git, then runs the matching linters.
 
+# Claude Code invokes this script outside of an interactive shell, so rv's
+#   PROMPT_COMMAND-based version switching never runs; re-resolve it here.
+if command -v rv >/dev/null 2>&1; then
+  RV_ENV=$(rv shell env bash) || { echo "rv shell env bash failed to resolve the Ruby environment" >&2; exit 2; }
+  eval "$RV_ENV"
+fi
+
 RUBY_FILES=()
+FRONTEND_TS_FILES=()
 FRONTEND_JS_FILES=()
 COFFEESCRIPT_FILES=()
 STYLE_FILES=()
@@ -14,23 +22,33 @@ EXIT_CODE=0
 while IFS= read -r file; do
   [[ -z "$file" ]] && continue
   case "$file" in
-    *.rb)               RUBY_FILES+=("$file") ;;
-    *.ts|*.vue|*.js)    FRONTEND_JS_FILES+=("$file") ;;
-    *.coffee)           COFFEESCRIPT_FILES+=("$file") ;;
-    *.scss|*.css)       STYLE_FILES+=("$file") ;;
-    *.md)               MARKDOWN_FILES+=("$file") ;;
+    *.rb)         RUBY_FILES+=("$file") ;;
+    *.ts|*.vue)   FRONTEND_TS_FILES+=("$file") ;;
+    # Legacy/vendored assets are third-party code and outside the scope of
+    #   `pnpm lint:js`, which only covers app/frontend/ and .eslint-plugin-zammad/.
+    *.js)         [[ "$file" == public/* || "$file" == app/assets/javascripts/* ]] || FRONTEND_JS_FILES+=("$file") ;;
+    *.coffee)     COFFEESCRIPT_FILES+=("$file") ;;
+    *.scss|*.css) STYLE_FILES+=("$file") ;;
+    *.md)         MARKDOWN_FILES+=("$file") ;;
   esac
 done < <(git diff --name-only --diff-filter=ACMR HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null)
+
+FRONTEND_ALL_FILES=("${FRONTEND_TS_FILES[@]}" "${FRONTEND_JS_FILES[@]}")
 
 if [[ ${#RUBY_FILES[@]} -gt 0 ]]; then
   bundle exec rubocop --autocorrect "${RUBY_FILES[@]}" >&2 || EXIT_CODE=2
 fi
 
-if [[ ${#FRONTEND_JS_FILES[@]} -gt 0 ]]; then
-  { pnpm lint:js:oxlint:cmd --fix "${FRONTEND_JS_FILES[@]}" && \
-    pnpm lint:js:eslint:cmd --fix "${FRONTEND_JS_FILES[@]}" && \
-    pnpm format:cmd "${FRONTEND_JS_FILES[@]}" && \
-    pnpm lint:ts; } >&2 || EXIT_CODE=2
+if [[ ${#FRONTEND_ALL_FILES[@]} -gt 0 ]]; then
+  # Generated files (e.g. the GraphQL types) are excluded by the lint configs, so
+  #   a changeset consisting only of those must not be treated as an error.
+  { pnpm lint:js:oxlint:cmd --no-error-on-unmatched-pattern --fix "${FRONTEND_ALL_FILES[@]}" && \
+    pnpm lint:js:eslint:cmd --fix "${FRONTEND_ALL_FILES[@]}" && \
+    { pnpm format:cmd "${FRONTEND_ALL_FILES[@]}"; _fmt_rc=$?; (( _fmt_rc == 0 || _fmt_rc == 2 )); }; } >&2 || EXIT_CODE=2
+fi
+
+if [[ ${#FRONTEND_TS_FILES[@]} -gt 0 ]]; then
+  pnpm lint:ts >&2 || EXIT_CODE=2
 fi
 
 if [[ ${#COFFEESCRIPT_FILES[@]} -gt 0 ]]; then
