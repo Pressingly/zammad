@@ -71,28 +71,37 @@ module Zammad
       email = resolve_email(email_claim)
       return forbidden('DEFAULT_EMAIL_DOMAIN is required but not set') if email.nil?
 
-      rejection = corporate_rejection(env)
-      if rejection
-        Rails.logger.warn("mpass_proxy_auth: mPass login refused reason=#{rejection} mpass_id=#{self.class.mpass_id_for_logs(env)} path=#{env['PATH_INFO']}")
-        return forbidden('access_denied')
-      end
-
       session = env['rack.session']
-      user = upsert_user(email)
+      user = find_user(email)
+      if !session_holds?(session, user)
+        rejection = corporate_rejection(env)
+        return refuse_login(env, rejection) if rejection
+
+        user ||= create_user_safely(email)
+      end
 
       return forbidden(__('User could not be resolved')) if user.nil?
       return forbidden(__('User account is not active')) if !user.active
       return forbidden(__('Maintenance mode enabled!')) if maintenance_mode?(user)
+      return @app.call(env) if session_holds?(session, user)
 
-      existing_user_id = session[:user_id]
-      return @app.call(env) if existing_user_id == user.id
-
-      if existing_user_id
-        Rails.logger.info { "mpass_proxy_auth: session re-key from user #{existing_user_id} to #{user.id}" }
+      if session[:user_id]
+        Rails.logger.info { "mpass_proxy_auth: session re-key from user #{session[:user_id]} to #{user.id}" }
       end
 
       establish_session(session, user)
       @app.call(env)
+    end
+
+    # The corporate gate runs when a session is opened, as in Plane: the
+    # forwarded token is checked once per login, not on every request.
+    def session_holds?(session, user)
+      !user.nil? && session[:user_id] == user.id
+    end
+
+    def refuse_login(env, rejection)
+      Rails.logger.warn("mpass_proxy_auth: mPass login refused reason=#{rejection} mpass_id=#{self.class.mpass_id_for_logs(env)} path=#{env['PATH_INFO']}")
+      forbidden('access_denied')
     end
 
     def resolve_email(claim)
@@ -136,14 +145,12 @@ module Zammad
       nil
     end
 
-    def upsert_user(email)
-      UserInfo.with_user_id(1) do
-        user = User.find_by(login: email) || User.find_by(email: email)
+    def find_user(email)
+      User.find_by(login: email) || User.find_by(email: email)
+    end
 
-        return user if user
-
-        create_user(email)
-      end
+    def create_user_safely(email)
+      UserInfo.with_user_id(1) { find_user(email) || create_user(email) }
     rescue => e
       Rails.logger.error("mpass_proxy_auth: user upsert failed for #{email}: #{e.message}")
       nil

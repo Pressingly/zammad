@@ -341,6 +341,50 @@ RSpec.describe Zammad::MpassProxyAuth, :aggregate_failures, :mpass_token do
       it_behaves_like 'refuses the login', 'missing_token'
     end
 
+    context 'when the session already holds the asserted user' do
+      let(:user) { create(:agent, login: 'test@arbisoft.com', email: 'test@arbisoft.com') }
+
+      before do
+        session[:user_id] = user.id
+        env['HTTP_X_AUTH_REQUEST_ACCESS_TOKEN'] = mpass_token(mpass_access_claims('iat' => Time.now.to_i - 7200, 'exp' => Time.now.to_i - 3600))
+      end
+
+      it 'passes through without re-checking the token' do
+        middleware.call(env)
+        expect(app).to have_received(:call)
+        expect(session[:user_id]).to eq(user.id)
+      end
+    end
+
+    context 'when the session holds another user' do
+      let(:other) { create(:agent, login: 'other@arbisoft.com', email: 'other@arbisoft.com') }
+
+      before do
+        session[:user_id] = other.id
+        env['HTTP_X_AUTH_REQUEST_ACCESS_TOKEN'] = mpass_token(mpass_access_claims('iat' => Time.now.to_i - 7200, 'exp' => Time.now.to_i - 3600))
+      end
+
+      it_behaves_like 'refuses the login', 'expired'
+
+      it 'keeps the existing session' do
+        middleware.call(env)
+        expect(session[:user_id]).to eq(other.id)
+      end
+    end
+
+    context 'when an existing user without a session presents an expired token' do
+      before do
+        create(:agent, login: 'test@arbisoft.com', email: 'test@arbisoft.com')
+        env['HTTP_X_AUTH_REQUEST_ACCESS_TOKEN'] = mpass_token(mpass_access_claims('iat' => Time.now.to_i - 7200, 'exp' => Time.now.to_i - 3600))
+      end
+
+      it 'refuses to open a session' do
+        status, _headers, _body = middleware.call(env)
+        expect(status).to eq(403)
+        expect(session[:user_id]).to be_nil
+      end
+    end
+
     context 'when the token is valid and matches the corporate id' do
       before { env['HTTP_X_AUTH_REQUEST_ACCESS_TOKEN'] = mpass_token }
 

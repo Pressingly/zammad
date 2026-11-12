@@ -154,7 +154,9 @@ Only the user-initiated entry points are patched. Involuntary session ends
   when a bare username arrives and `DEFAULT_EMAIL_DOMAIN` is unset.
   This prevents local-part collision impersonation.
 - **Corporate-ID enforcement**: when `SMB_CORPORATE_ID` is set, the
-  forwarded token is verified before its claims are read: RS256 only,
+  forwarded token is verified when a session is opened or re-keyed (a
+  request whose session already holds the asserted user skips it, as in
+  Plane), before its claims are read: RS256 only,
   `exp`/`iat`/`iss`/`token_use` required, 60s leeway, issuer allowlisted,
   `client_id` (access) or `aud` (id) must name the client. JWKS are cached
   per issuer for an hour, fetched with a 2s timeout, and a failed fetch backs
