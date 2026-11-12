@@ -160,8 +160,10 @@ Only the user-initiated entry points are patched. Involuntary session ends
   `exp`/`iat`/`iss`/`token_use` required, 60s leeway, issuer allowlisted,
   `client_id` (access) or `aud` (id) must name the client. JWKS are cached
   per issuer for an hour, fetched with a 2s timeout, and a failed fetch backs
-  off for 30s; any fetch or parse error refuses the login
-  (`jwks_unavailable`) rather than raising. Reason codes: `missing_token`,
+  off for 30s. The fetch runs outside the cache lock, one per issuer. When a
+  refresh fails, the last set keeps being served for up to 24h (logged);
+  with no usable set the login is refused (`jwks_unavailable`) rather than
+  raising. Reason codes: `missing_token`,
   `malformed`, `untrusted_issuer`, `bad_signature`, `expired`, `invalid`,
   `unknown_signing_key`, `wrong_audience`, `jwks_unavailable`,
   `verifier_unconfigured`, `not_corporate`, `wrong_organization`.

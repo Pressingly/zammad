@@ -18,8 +18,10 @@ RSpec.describe Zammad::MpassJwksCache, :aggregate_failures, :mpass_token do
         response
       },
       clock:   -> { now.first },
+      logger:  logger,
     )
   end
+  let(:logger) { instance_double(ActiveSupport::Logger, warn: nil) }
 
   def advance(seconds)
     now[0] += seconds
@@ -66,5 +68,67 @@ RSpec.describe Zammad::MpassJwksCache, :aggregate_failures, :mpass_token do
   it 'treats a document without keys as unavailable' do
     responses << '{"error":"nope"}'
     expect { cache.key_for(issuer, kid) }.to raise_error(described_class::Unavailable)
+  end
+
+  describe 'when a refresh fails' do
+    before do
+      cache.key_for(issuer, kid)
+      advance(described_class::LIFESPAN_SECONDS)
+      responses << Net::OpenTimeout
+    end
+
+    it 'serves the expired set and logs a warning' do
+      expect(cache.key_for(issuer, kid)).to be_a(OpenSSL::PKey::RSA)
+      expect(logger).to have_received(:warn).with(a_string_including('JWKS fetch', 'Net::OpenTimeout'))
+    end
+
+    it 'keeps serving the expired set during the backoff without refetching' do
+      2.times { cache.key_for(issuer, kid) }
+      expect(fetches.size).to eq(2)
+    end
+
+    it 'refuses once the set is older than the grace period' do
+      advance(described_class::STALE_GRACE_SECONDS - described_class::LIFESPAN_SECONDS)
+      expect { cache.key_for(issuer, kid) }.to raise_error(described_class::Unavailable)
+    end
+  end
+
+  describe 'concurrency' do
+    let(:release)  { Queue.new }
+    let(:started)  { Queue.new }
+    let(:calls)    { [] }
+    let(:blocking_cache) do
+      described_class.new(
+        fetcher: lambda { |url|
+          calls << url
+          if url.include?('slow')
+            started << true
+            release.pop
+          end
+          mpass_jwks_document
+        },
+        logger:  logger,
+      )
+    end
+
+    after { release << true while release.num_waiting.positive? }
+
+    it 'does not block other issuers while one fetch is in flight' do
+      slow = Thread.new { blocking_cache.key_for('https://slow.example.test', kid) }
+      started.pop
+      expect(blocking_cache.key_for(issuer, kid)).to be_a(OpenSSL::PKey::RSA)
+      release << true
+      expect(slow.value).to be_a(OpenSSL::PKey::RSA)
+    end
+
+    it 'fetches an issuer once when several threads ask at the same time' do
+      first = Thread.new { blocking_cache.key_for('https://slow.example.test', kid) }
+      started.pop
+      waiters = Array.new(3) { Thread.new { blocking_cache.key_for('https://slow.example.test', kid) } }
+      Thread.pass until waiters.all? { |thread| thread.status == 'sleep' }
+      release << true
+      expect([first, *waiters].map(&:value)).to all(be_a(OpenSSL::PKey::RSA))
+      expect(calls.count { |url| url.include?('slow') }).to eq(1)
+    end
   end
 end
