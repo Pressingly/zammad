@@ -23,7 +23,12 @@ UUID, not a usable identity (see Penpot regression test `3a7adafc5`).
 |---------|----------|-------------|
 | `AUTH_TYPE` | Yes | Set to `SSO` to activate the middleware. Matches the convention used by Outline, Plane, Penpot, and Twenty in the FOSS bundle. Passed via docker-compose `environment:` block |
 | `DEFAULT_EMAIL_DOMAIN` | Yes | Domain appended to bare usernames. **Fails closed** when unset — bare usernames are rejected. Cognito's `cognito:username` claim often lacks `@`, making this the primary code path |
-| `SMB_CORPORATE_ID` | No | When set, enforces corporate-ID check against the JWT `custom:corporate_id` claim in `X-Auth-Request-Access-Token`. Requests without a matching corporate ID get 403 |
+| `MPASS_EDGE_SECRET` | Yes | Shared secret Traefik injects as `X-Mpass-Edge-Secret` on the SSO router only. The `X-Auth-Request-*` headers are honoured only when it matches (constant-time). Empty, a `CHANGE_ME_` placeholder or shorter than 32 characters: every identity header is ignored, SSO login is off, and an error is logged at boot |
+| `SMB_CORPORATE_ID` | No | When set, `X-Auth-Request-Access-Token` must be a valid RS256 token from an allowlisted issuer (signature checked against the issuer's JWKS) with `custom:is_corporate=true` and a matching `custom:corporate_id`. Anything else gets 403 `access_denied` and a log line with a reason code. Unset: no token is read and no JWKS is fetched |
+| `MPASS_COGNITO_ISSUER_URL` | With `SMB_CORPORATE_ID` | The Cognito issuer oauth2-proxy validates (trailing `/` stripped). Falls back to `https://cognito-idp.<COGNITO_AWS_REGION>.amazonaws.com/<COGNITO_USER_POOL_ID>` |
+| `MPASS_TOKEN_ISSUER_URL` | No | mpass-auth-proxy's issuer, trusted too when it re-signs id_tokens (email capture on). JWKS at `<issuer>/.well-known/jwks.json` |
+| `MPASS_OIDC_CLIENT_ID` | With `SMB_CORPORATE_ID` | Cognito app client: an access token's `client_id`, or an id_token's `aud`, must name it |
+| `MPASS_MCP_OIDC_CLIENT_ID` | No | Second accepted client id, for the zammad-mcp bootstrap when the MCP signs in with its own Cognito client |
 | `LOGOUT_REDIRECT_URL` | Yes (under SSO) | Platform portal URL that the per-app "Sign out" control navigates to, e.g. `https://foss.arbisoft.com`. Read at boot and mirrored into the frontend Settings. Must be an absolute `http(s)` URL; anything else is logged and ignored |
 
 ## User provisioning (JIT)
@@ -149,19 +154,37 @@ Only the user-initiated entry points are patched. Involuntary session ends
   when a bare username arrives and `DEFAULT_EMAIL_DOMAIN` is unset.
   This prevents local-part collision impersonation.
 - **Corporate-ID enforcement**: when `SMB_CORPORATE_ID` is set, the
-  access token's `custom:corporate_id` must match. Missing or
-  undecodable tokens are rejected.
-- **Header trust is topology-based**: Traefik's `strip-auth-headers`
-  middleware removes any client-supplied `X-Auth-Request-*` headers
-  before `mpass-auth` sets the real ones. The middleware does NOT
-  implement its own IP-based trust check (that is `create_sso`'s
-  `auth_sso_trusted_ips` concern, which we bypass entirely).
+  forwarded token is verified before its claims are read: RS256 only,
+  `exp`/`iat`/`iss`/`token_use` required, 60s leeway, issuer allowlisted,
+  `client_id` (access) or `aud` (id) must name the client. JWKS are cached
+  per issuer for an hour, fetched with a 2s timeout, and a failed fetch backs
+  off for 30s; any fetch or parse error refuses the login
+  (`jwks_unavailable`) rather than raising. Reason codes: `missing_token`,
+  `malformed`, `untrusted_issuer`, `bad_signature`, `expired`, `invalid`,
+  `unknown_signing_key`, `wrong_audience`, `jwks_unavailable`,
+  `verifier_unconfigured`, `not_corporate`, `wrong_organization`.
+- **Header trust needs the edge secret**: `strip-auth-headers` only protects
+  requests that pass through Traefik. Anything on the backend network can
+  reach `zammad-nginx:8080` directly, so the middleware honours
+  `X-Auth-Request-*` only when `X-Mpass-Edge-Secret` matches
+  `MPASS_EDGE_SECRET`. Otherwise it deletes those headers before anything
+  reads them (no login, no session re-key) and logs a warning with the mPass
+  id, path and remote address. The edge secret header is always removed
+  from the Rack env, and the HTTP access log masks it and the access token.
+- **API tokens are unaffected**: a request without identity headers (an API
+  token, including zammad-mcp's minted per-user tokens, or a session cookie)
+  passes straight through. zammad-mcp's mint bootstrap sends
+  `X-Auth-Request-Email` to the internal URL, so it must also send the edge
+  secret.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `lib/zammad/mpass_proxy_auth.rb` | The Rack middleware |
+| `lib/zammad/mpass_edge_trust.rb` | Edge-secret check |
+| `lib/zammad/mpass_token_verifier.rb` | JWKS-backed verification of the forwarded token |
+| `lib/zammad/mpass_jwks_cache.rb` | Per-issuer JWKS fetch, cache and failure backoff |
 | `lib/zammad/mpass_auth_lockdown.rb` | Email immutability + password change guard |
 | `lib/zammad/mpass_logout.rb` | Env → Setting plumbing for the portal logout redirect |
 | `config/initializers/mpass_proxy_auth.rb` | Wires middleware, lockdown modules, and forces Settings on boot |

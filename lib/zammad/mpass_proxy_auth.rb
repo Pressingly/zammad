@@ -1,30 +1,80 @@
 # Copyright (C) 2012-2026 Zammad Foundation, https://zammad-foundation.org/
 
-require 'base64'
 require 'json'
+require 'zammad/mpass_edge_trust'
+require 'zammad/mpass_token_verifier'
 
 module Zammad
+  # Signs in the user oauth2-proxy asserts in X-Auth-Request-Email.
+  #
+  # The identity headers are honoured only on requests carrying MPASS_EDGE_SECRET
+  # in X-Mpass-Edge-Secret, which Traefik sets on the SSO router. On any other
+  # request they are dropped before anything reads them, and Zammad's own
+  # authentication (session cookie, API token) applies.
   class MpassProxyAuth
-    EMAIL_HEADER          = 'HTTP_X_AUTH_REQUEST_EMAIL'.freeze
-    ACCESS_TOKEN_HEADER   = 'HTTP_X_AUTH_REQUEST_ACCESS_TOKEN'.freeze
+    EMAIL_HEADER        = 'HTTP_X_AUTH_REQUEST_EMAIL'.freeze
+    ACCESS_TOKEN_HEADER = 'HTTP_X_AUTH_REQUEST_ACCESS_TOKEN'.freeze
+    MPASS_ID_HEADERS    = %w[HTTP_X_AUTH_REQUEST_USER HTTP_X_AUTH_REQUEST_PREFERRED_USERNAME].freeze
+    IDENTITY_HEADER_PREFIX = 'HTTP_X_AUTH_REQUEST_'.freeze
 
-    def initialize(app)
-      @app = app
+    def self.identity_header_keys(env)
+      env.keys.select { |key| key.is_a?(String) && key.start_with?(IDENTITY_HEADER_PREFIX) }
+    end
+
+    # With email capture on X-Auth-Request-User carries the email, so only a value without '@' is logged.
+    def self.mpass_id_for_logs(env)
+      MPASS_ID_HEADERS.map { |header| env[header].to_s.strip }.find { |value| value.present? && value.exclude?('@') } || '-'
+    end
+
+    def initialize(app,
+                   edge_secret:    MpassEdgeTrust.configured(ENV['MPASS_EDGE_SECRET']),
+                   corporate_id:   ENV['SMB_CORPORATE_ID'].to_s.strip,
+                   token_verifier: MpassTokenVerifier.from_env)
+      @app            = app
+      @edge_secret    = edge_secret
+      @corporate_id   = corporate_id
+      @token_verifier = token_verifier
+      log_configuration_errors
     end
 
     def call(env)
+      from_edge = MpassEdgeTrust.from_edge?(env, @edge_secret)
+      env.delete(MpassEdgeTrust::HEADER)
+      drop_untrusted_identity_headers(env) if !from_edge
+
       email_claim = env[EMAIL_HEADER]
+      return @app.call(env) if email_claim.blank?
 
-      if email_claim.blank?
-        return @app.call(env)
+      sign_in(env, email_claim)
+    end
+
+    private
+
+    def log_configuration_errors
+      if !MpassEdgeTrust.usable_secret?(@edge_secret)
+        Rails.logger.error('mpass_proxy_auth: MPASS_EDGE_SECRET is unset or shorter than 32 characters: mPass identity headers will be ignored and SSO login is disabled')
       end
+      return if !corporate_gate_active? || @token_verifier.configured?
 
+      Rails.logger.error('mpass_proxy_auth: SMB_CORPORATE_ID is set but no token issuer or client id is configured (MPASS_COGNITO_ISSUER_URL, MPASS_OIDC_CLIENT_ID): every mPass login will be refused')
+    end
+
+    def drop_untrusted_identity_headers(env)
+      keys = self.class.identity_header_keys(env)
+      return if keys.empty?
+
+      Rails.logger.warn("mpass_proxy_auth: mPass identity headers ignored: request lacks the edge secret mpass_id=#{self.class.mpass_id_for_logs(env)} path=#{env['PATH_INFO']} remote_addr=#{env['REMOTE_ADDR'] || '-'} forwarded_for=#{env['HTTP_X_FORWARDED_FOR'] || '-'}")
+      keys.each { |key| env.delete(key) }
+    end
+
+    def sign_in(env, email_claim)
       email = resolve_email(email_claim)
       return forbidden('DEFAULT_EMAIL_DOMAIN is required but not set') if email.nil?
 
-      if corporate_id_enforcement_active?
-        denial = check_corporate_id(env)
-        return denial if denial
+      rejection = corporate_rejection(env)
+      if rejection
+        Rails.logger.warn("mpass_proxy_auth: mPass login refused reason=#{rejection} mpass_id=#{self.class.mpass_id_for_logs(env)} path=#{env['PATH_INFO']}")
+        return forbidden('access_denied')
       end
 
       session = env['rack.session']
@@ -32,79 +82,56 @@ module Zammad
 
       return forbidden(__('User could not be resolved')) if user.nil?
       return forbidden(__('User account is not active')) if !user.active
-
-      if maintenance_mode?(user)
-        return forbidden(__('Maintenance mode enabled!'))
-      end
+      return forbidden(__('Maintenance mode enabled!')) if maintenance_mode?(user)
 
       existing_user_id = session[:user_id]
+      return @app.call(env) if existing_user_id == user.id
 
-      if existing_user_id && existing_user_id == user.id
-        return @app.call(env)
-      end
-
-      if existing_user_id && existing_user_id != user.id
+      if existing_user_id
         Rails.logger.info { "mpass_proxy_auth: session re-key from user #{existing_user_id} to #{user.id}" }
       end
 
       establish_session(session, user)
-
       @app.call(env)
     end
-
-    private
 
     def resolve_email(claim)
       claim = claim.to_s.strip.downcase
       return nil if claim.empty?
+      return claim if claim.include?('@')
 
-      if claim.include?('@')
-        claim
-      else
-        domain = ENV['DEFAULT_EMAIL_DOMAIN']
-        if domain.blank?
-          Rails.logger.error('mpass_proxy_auth: bare username received but DEFAULT_EMAIL_DOMAIN is not set — failing closed')
-          return nil
-        end
-        "#{claim}@#{domain}"
+      domain = ENV['DEFAULT_EMAIL_DOMAIN']
+      if domain.blank?
+        Rails.logger.error('mpass_proxy_auth: bare username received but DEFAULT_EMAIL_DOMAIN is not set — failing closed')
+        return nil
       end
+      "#{claim}@#{domain}"
     end
 
     def maintenance_mode?(user)
       Setting.get('maintenance_mode') == true && !user.permissions?('admin.maintenance')
     end
 
-    def corporate_id_enforcement_active?
-      ENV['SMB_CORPORATE_ID'].present?
+    def corporate_gate_active?
+      @corporate_id.present?
     end
 
-    def check_corporate_id(env)
+    # Why the caller fails the SMB corporate gate, or nil when it passes. With
+    # SMB_CORPORATE_ID unset the gate is off and the token is never read.
+    def corporate_rejection(env)
+      return nil if !corporate_gate_active?
+
       access_token = env[ACCESS_TOKEN_HEADER]
+      return 'missing_token' if access_token.blank?
 
-      if access_token.blank?
-        Rails.logger.warn('mpass_proxy_auth: corporate-id enforcement active but no access token present')
-        return forbidden('access_denied')
-      end
+      corporate_claims_rejection(@token_verifier.verify(access_token))
+    rescue MpassTokenVerifier::InvalidToken => e
+      e.reason
+    end
 
-      parts = access_token.split('.')
-      return forbidden('access_denied') if parts.length < 2
-
-      begin
-        decoded = Base64.urlsafe_decode64(parts[1])
-        payload = JSON.parse(decoded)
-      rescue => e
-        Rails.logger.warn("mpass_proxy_auth: failed to decode access token payload: #{e.message}")
-        return forbidden('access_denied')
-      end
-
-      expected = ENV['SMB_CORPORATE_ID']
-      is_corporate = payload['custom:is_corporate']
-      corporate_id = payload['custom:corporate_id']
-
-      if is_corporate != 'true' || corporate_id != expected
-        Rails.logger.warn("mpass_proxy_auth: corporate-id mismatch — expected=#{expected}, got=#{corporate_id}, is_corporate=#{is_corporate}")
-        return forbidden('access_denied')
-      end
+    def corporate_claims_rejection(claims)
+      return 'not_corporate' if claims['custom:is_corporate'] != 'true'
+      return 'wrong_organization' if claims['custom:corporate_id'] != @corporate_id
 
       nil
     end
