@@ -937,6 +937,7 @@ DEPENDENCIES
   icalendar
   icalendar-recurrence
   json
+  jwt (~> 3.2)
   koala
   listen
   localhost
