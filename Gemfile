@@ -117,6 +117,9 @@ gem 'omniauth-saml'
 gem 'omniauth-twitter'
 gem 'omniauth-weibo-oauth2'
 
+# authentication - mPass proxy SSO (verifies the token oauth2-proxy forwards)
+gem 'jwt', '~> 3.2'
+
 # Rate limiting
 gem 'rack-attack'
 
