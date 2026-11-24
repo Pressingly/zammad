@@ -114,7 +114,7 @@ module Zammad
           description: __('Defines if the platform SSO integration (AUTH_TYPE=SSO) is active. Managed by the deployment environment, not by administrators.'),
           options:     {},
           state:       false,
-          preferences: {},
+          preferences: { permission: ['admin'] },
           frontend:    true
         )
       end
@@ -129,7 +129,7 @@ module Zammad
           description: __('Platform portal URL that the per-app sign out control navigates to. Managed by the deployment environment (LOGOUT_REDIRECT_URL), not by administrators.'),
           options:     {},
           state:       '',
-          preferences: {},
+          preferences: { permission: ['admin'] },
           frontend:    true
         )
       end
