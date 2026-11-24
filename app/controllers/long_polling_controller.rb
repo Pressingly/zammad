@@ -3,8 +3,9 @@
 class LongPollingController < ApplicationController
   skip_before_action :session_update # prevent race conditions
   prepend_before_action :authentication_check_only
+  before_action :verify_session_authentication
 
-  # GET /api/v1/message_send
+  # POST /api/v1/message_send
   def message_send
     new_connection = false
 
@@ -46,7 +47,7 @@ class LongPollingController < ApplicationController
     render json: {}
   end
 
-  # GET /api/v1/message_receive
+  # POST /api/v1/message_receive
   def message_receive
 
     # check client id
@@ -90,6 +91,12 @@ class LongPollingController < ApplicationController
   end
 
   private
+
+  def verify_session_authentication
+    return if @_auth_type.blank? || @_auth_type == 'session'
+
+    raise Exceptions::Forbidden, __('Only session based authentication is supported!')
+  end
 
   def client_id_gen
     SecureRandom.uuid

@@ -14,7 +14,7 @@ class CoreWorkflow::Result::BaseOption < CoreWorkflow::Result::Backend
   end
 
   def remove_array
-    @result_object.payload['params'][field] = Array(@result_object.payload['params'][field]).reject do |v|
+    @result_object.payload['params'][field] = Array.wrap(@result_object.payload['params'][field]).reject do |v|
       excluded = excluded_by_restrict_values?(v)
       if excluded
         set_rerun
@@ -24,7 +24,7 @@ class CoreWorkflow::Result::BaseOption < CoreWorkflow::Result::Backend
   end
 
   def first_value_default
-    @result_object.result[:restrict_values][field]&.first
+    restrict_values.first
   end
 
   def relation_value_default
@@ -41,7 +41,10 @@ class CoreWorkflow::Result::BaseOption < CoreWorkflow::Result::Backend
   def init_value_default
     return if !@result_object.payload['screen'].starts_with?('create')
 
-    value = @result_object.attributes.new_only&.try(field)
+    new_only = @result_object.attributes.new_only
+    return if !new_only&.has_attribute?(field)
+
+    value = new_only[field]
     return if excluded_by_restrict_values?(value)
 
     value
@@ -53,7 +56,7 @@ class CoreWorkflow::Result::BaseOption < CoreWorkflow::Result::Backend
   end
 
   def excluded_by_restrict_values?(value)
-    @result_object.result[:restrict_values][field].exclude?(value.to_s)
+    restrict_values.exclude?(value.to_s)
   end
 
   def readd_excluded_param_values
@@ -71,7 +74,7 @@ class CoreWorkflow::Result::BaseOption < CoreWorkflow::Result::Backend
   end
 
   def restore_array
-    new_value = @result_object.payload_backup['params'][field]&.map(&:to_s) & @result_object.result[:restrict_values][field]
+    new_value = Array.wrap(@result_object.payload_backup['params'][field]).map(&:to_s) & restrict_values
 
     new_value_rerun(field, new_value)
 

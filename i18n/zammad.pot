@@ -479,6 +479,10 @@ msgstr ""
 msgid "'%s' is not a valid IP address or CIDR range."
 msgstr ""
 
+#: app/models/setting/validation/backend_class.rb:20
+msgid "'%s' is not a valid backend for this setting."
+msgstr ""
+
 #: app/frontend/apps/mobile/components/CommonTicketStateIndicator/CommonTicketStateIndicator.vue:63
 msgid "(state: %s)"
 msgstr ""
@@ -613,7 +617,7 @@ msgstr ""
 msgid "A new session was created with your account. This session will be stopped to prevent a conflict."
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:141
+#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:151
 msgid "A new version of Zammad is available, please reload your browser."
 msgstr ""
 
@@ -966,7 +970,7 @@ msgstr ""
 
 #: app/assets/javascripts/app/controllers/_channel/email.coffee:610
 #: app/assets/javascripts/app/controllers/getting_started/channel_email.coffee:197
-#: app/controllers/channels_email_controller.rb:238
+#: app/controllers/channels_email_controller.rb:237
 msgid "Account already exists!"
 msgstr ""
 
@@ -988,10 +992,10 @@ msgstr ""
 msgid "Accounted Time"
 msgstr ""
 
-#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:133
+#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:138
 #: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/TimeAccountingFlyout.vue:74
 #: app/frontend/apps/desktop/pages/ticket/components/TicketSidebar/TicketSidebarInformation/TicketSidebarInformationContent.vue:185
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:128
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:132
 #: app/frontend/shared/entities/ticket/stores/objectAttributes.ts:14
 msgid "Accounted time"
 msgstr ""
@@ -1592,8 +1596,8 @@ msgstr ""
 msgid "Agent idle timeout"
 msgstr ""
 
-#: app/models/role.rb:182
-#: app/models/user.rb:807
+#: app/models/role.rb:195
+#: app/models/user.rb:809
 msgid "Agent limit exceeded, please check your account settings."
 msgstr ""
 
@@ -1831,7 +1835,7 @@ msgstr ""
 msgid "An unknown error occurred"
 msgstr ""
 
-#: lib/calendar_subscriptions.rb:31
+#: lib/calendar_subscriptions.rb:33
 msgid "An unknown method name was requested."
 msgstr ""
 
@@ -2273,7 +2277,7 @@ msgstr ""
 msgid "Assignment timeout in minutes if assigned agent is not working on it. Ticket will be shown as unassigend."
 msgstr ""
 
-#: app/models/user.rb:709
+#: app/models/user.rb:711
 msgid "At least one identifier (firstname, lastname, phone, mobile or email) for user is required."
 msgstr ""
 
@@ -2289,8 +2293,8 @@ msgstr ""
 msgid "At least one object must be selected."
 msgstr ""
 
-#: app/models/role.rb:159
-#: app/models/user.rb:786
+#: app/models/role.rb:172
+#: app/models/user.rb:788
 msgid "At least one user needs to have admin permissions."
 msgstr ""
 
@@ -2558,11 +2562,11 @@ msgstr ""
 msgid "Automatically loads the chat.css file. If you want to use your own css, just set it to false."
 msgstr ""
 
-#: app/frontend/shared/components/Form/Form.vue:1324
+#: app/frontend/shared/components/Form/Form.vue:1331
 msgid "Autosave in progress…"
 msgstr ""
 
-#: app/frontend/shared/components/Form/Form.vue:1333
+#: app/frontend/shared/components/Form/Form.vue:1340
 msgid "Autosaving is taking longer than expected…"
 msgstr ""
 
@@ -2766,8 +2770,8 @@ msgstr ""
 msgid "Before you start, make sure to check the following points to ensure a smooth migration and usage of your Zammad instance:"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/ticket_zoom/article_action/email_reply.coffee:265
-#: app/frontend/shared/entities/ticket-article/action/plugins/email/forward.ts:89
+#: app/assets/javascripts/app/controllers/ticket_zoom/article_action/email_reply.coffee:266
+#: app/frontend/shared/entities/ticket-article/action/plugins/email/forward.ts:92
 msgid "Begin forwarded message"
 msgstr ""
 
@@ -2934,10 +2938,10 @@ msgstr ""
 #: app/assets/javascripts/app/views/ticket_zoom/article_new.jst.eco:58
 #: app/assets/javascripts/app/views/ticket_zoom/article_view.jst.eco:34
 #: app/frontend/apps/desktop/pages/ticket/components/TicketCreate/TicketCreateContent.vue:173
-#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:106
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:98
+#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:111
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:99
 #: app/frontend/apps/mobile/pages/ticket/views/TicketCreate.vue:261
-#: app/frontend/shared/entities/ticket-article/action/plugins/email/forward.ts:30
+#: app/frontend/shared/entities/ticket-article/action/plugins/email/forward.ts:31
 #: app/frontend/shared/entities/ticket/composables/useTicketEditForm.ts:273
 #: db/seeds/object_manager_attributes.rb:523
 msgid "CC"
@@ -3071,7 +3075,7 @@ msgid "Can't update password, your entered passwords do not match. Please try ag
 msgstr ""
 
 #: app/assets/javascripts/app/controllers/_application_controller/after_auth_modal.coffee:9
-#: app/assets/javascripts/app/controllers/ticket_zoom/article_action/email_reply.coffee:466
+#: app/assets/javascripts/app/controllers/ticket_zoom/article_action/email_reply.coffee:467
 #: app/assets/javascripts/app/controllers/ticket_zoom/article_new.coffee:380
 #: app/assets/javascripts/app/views/integration/exchange_certificate_issue.jst.eco:18
 #: app/assets/javascripts/app/views/integration/exchange_wizard.jst.eco:236
@@ -3244,7 +3248,7 @@ msgstr ""
 
 #: app/assets/javascripts/app/controllers/ticket_customer.coffee:5
 #: app/assets/javascripts/app/controllers/ticket_zoom/sidebar_customer.coffee:14
-#: app/assets/javascripts/app/controllers/ticket_zoom/sidebar_ticket.coffee:126
+#: app/assets/javascripts/app/controllers/ticket_zoom/sidebar_ticket.coffee:133
 msgid "Change Customer"
 msgstr ""
 
@@ -3367,8 +3371,8 @@ msgstr ""
 #: app/assets/javascripts/app/models/email_address.coffee:34
 #: app/assets/javascripts/app/models/postmaster_filter.coffee:11
 #: app/assets/javascripts/app/views/ticket_zoom/article_view.jst.eco:164
-#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:124
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:110
+#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:129
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:114
 #: app/frontend/shared/entities/ticket/composables/useTicketEditForm.ts:162
 msgid "Channel"
 msgstr ""
@@ -3448,7 +3452,7 @@ msgstr ""
 msgid "Checklist"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:61
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:79
 msgid "Checklist Item"
 msgstr ""
 
@@ -3695,7 +3699,7 @@ msgstr ""
 msgid "Click here to set up a two-factor authentication method."
 msgstr ""
 
-#: app/frontend/shared/components/Form/fields/FieldEditor/FieldEditorInput.vue:50
+#: app/frontend/shared/components/Form/fields/FieldEditor/FieldEditorInput.vue:51
 msgid "Click to edit…"
 msgstr ""
 
@@ -3730,7 +3734,7 @@ msgstr ""
 #: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_description.coffee:4
 #: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_error_modal.coffee:4
 #: app/assets/javascripts/app/controllers/_channel/_channel_account_overview.coffee:317
-#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:32
+#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:42
 #: app/assets/javascripts/app/controllers/_settings/area_proxy.coffee:55
 #: app/assets/javascripts/app/controllers/translation.coffee:184
 #: app/assets/javascripts/app/controllers/widget/error_modal.coffee:4
@@ -3935,7 +3939,7 @@ msgstr ""
 msgid "Config"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:103
+#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:113
 msgid "Config has changed"
 msgstr ""
 
@@ -4146,11 +4150,15 @@ msgstr ""
 msgid "Content could not be loaded."
 msgstr ""
 
+#: app/models/store.rb:162
+msgid "Content is not a resizable image."
+msgstr ""
+
 #: app/frontend/apps/desktop/components/CommonSkeleton/CommonSkeleton.vue:13
 msgid "Content loader"
 msgstr ""
 
-#: app/models/store.rb:88
+#: app/models/store.rb:90
 msgid "Content preview could not be generated."
 msgstr ""
 
@@ -4203,7 +4211,7 @@ msgstr ""
 msgid "Continue anyway"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:30
+#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:40
 #: app/assets/javascripts/app/controllers/_plugin/session_taken_over.coffee:30
 #: app/assets/javascripts/app/controllers/_plugin/session_timeout.coffee:103
 msgid "Continue session"
@@ -4598,7 +4606,7 @@ msgstr ""
 #: app/frontend/apps/desktop/components/Ticket/TicketBarChart/useTicketStatsChart.ts:94
 #: app/frontend/apps/desktop/pages/personal-setting/views/PersonalSettingTokenAccess.vue:94
 #: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/TicketDetailTopBar/components/TicketInformationFull/TicketInformationBadgeList.vue:35
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:145
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:149
 #: app/models/report.rb:22
 msgid "Created"
 msgstr ""
@@ -4639,7 +4647,7 @@ msgstr ""
 #: app/controllers/time_accountings_controller.rb:116
 #: app/frontend/apps/desktop/components/Ticket/TicketSimpleTable/TicketSimpleTable.vue:37
 #: app/frontend/apps/desktop/components/TwoFactor/TwoFactorConfiguration/TwoFactorConfigurationSecurityKeys.vue:116
-#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:73
+#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:78
 #: app/frontend/shared/entities/organization/stores/objectAttributes.ts:24
 #: app/frontend/shared/entities/ticket/stores/objectAttributes.ts:102
 #: app/frontend/shared/entities/user/stores/objectAttributes.ts:25
@@ -4801,6 +4809,10 @@ msgstr ""
 msgid "Custom instructions"
 msgstr ""
 
+#: app/models/core_workflow.rb:89
+msgid "Custom module '%s' is not available."
+msgstr ""
+
 #: app/assets/javascripts/app/controllers/_application_controller/form.coffee:208
 #: app/assets/javascripts/app/controllers/_ui_element/_application_action.coffee:514
 #: app/assets/javascripts/app/controllers/_ui_element/_application_selector.coffee:14
@@ -4933,7 +4945,7 @@ msgstr ""
 
 #: app/assets/javascripts/app/controllers/knowledge_base/content_can_be_published_form.coffee:129
 #: app/assets/javascripts/app/views/calendar/holiday_selector.jst.eco:5
-#: app/frontend/shared/entities/ticket-article/action/plugins/email/forward.ts:27
+#: app/frontend/shared/entities/ticket-article/action/plugins/email/forward.ts:28
 msgid "Date"
 msgstr ""
 
@@ -5860,7 +5872,7 @@ msgstr ""
 #: app/assets/javascripts/app/controllers/knowledge_base/delete_action.coffee:9
 #: app/assets/javascripts/app/controllers/package.coffee:76
 #: app/assets/javascripts/app/controllers/user.coffee:107
-#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:90
+#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:93
 #: app/assets/javascripts/app/lib/mixins/knowledge_base_actions.coffee:26
 #: app/assets/javascripts/app/views/calendar/index.jst.eco:80
 #: app/assets/javascripts/app/views/channel/email_account_overview.jst.eco:153
@@ -6171,8 +6183,8 @@ msgstr ""
 msgid "Detected Language"
 msgstr ""
 
-#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:117
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:102
+#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:122
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:105
 msgid "Detected language"
 msgstr ""
 
@@ -6604,7 +6616,7 @@ msgstr ""
 #: app/assets/javascripts/app/controllers/organization_profile/action_row.coffee:36
 #: app/assets/javascripts/app/controllers/tag.coffee:118
 #: app/assets/javascripts/app/controllers/translation.coffee:92
-#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:77
+#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:78
 #: app/assets/javascripts/app/views/calendar/index.jst.eco:85
 #: app/assets/javascripts/app/views/channel/email_account_overview.jst.eco:62
 #: app/assets/javascripts/app/views/channel/sms_account_overview.jst.eco:68
@@ -6783,6 +6795,7 @@ msgstr ""
 msgid "Elasticsearch version"
 msgstr ""
 
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:59
 #: app/assets/javascripts/app/controllers/_channel/email.coffee:3
 #: app/assets/javascripts/app/controllers/_ui_element/_application_action.coffee:73
 #: app/assets/javascripts/app/controllers/_ui_element/object_perform_action.coffee:54
@@ -6794,6 +6807,7 @@ msgstr ""
 #: app/assets/javascripts/app/views/getting_started/email.jst.eco:6
 #: app/assets/javascripts/app/views/import/kayako.jst.eco:42
 #: app/assets/javascripts/app/views/import/zendesk.jst.eco:39
+#: app/frontend/apps/desktop/components/CommonHistoryFlyout/event-actions/notified.ts:18
 #: app/frontend/apps/desktop/composables/authentication/useSignupForm.ts:32
 #: app/frontend/apps/desktop/pages/guided-setup/components/GuidedSetupImport/GuidedSetupImportSource/GuidedSetupImportSourceKayako.vue:34
 #: app/frontend/apps/desktop/pages/guided-setup/components/GuidedSetupImport/GuidedSetupImportSource/GuidedSetupImportSourceZendesk.vue:34
@@ -6871,7 +6885,7 @@ msgstr ""
 msgid "Email address"
 msgstr ""
 
-#: app/models/user.rb:719
+#: app/models/user.rb:721
 msgid "Email address '%{email}' is already used for another user."
 msgstr ""
 
@@ -6907,8 +6921,8 @@ msgstr ""
 msgid "Email sending and receiving could not be verified. Please check your settings."
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:47
-#: app/frontend/apps/desktop/pages/user/components/UserDetailTopBar/actions/resendVerificationEmail.ts:42
+#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:48
+#: app/frontend/apps/desktop/pages/user/components/UserDetailTopBar/actions/resendVerificationEmail.ts:46
 msgid "Email sent to \"%s\". Please let the user verify their email account."
 msgstr ""
 
@@ -7675,7 +7689,7 @@ msgstr ""
 msgid "External data source field"
 msgstr ""
 
-#: lib/search_index_backend.rb:790
+#: lib/search_index_backend.rb:795
 msgid "Extract zammad-attachment information from arrays"
 msgstr ""
 
@@ -7765,7 +7779,7 @@ msgstr ""
 msgid "Failed to save the order of the checklist items. Please try again."
 msgstr ""
 
-#: app/frontend/apps/desktop/pages/user/components/UserDetailTopBar/actions/resendVerificationEmail.ts:50
+#: app/frontend/apps/desktop/pages/user/components/UserDetailTopBar/actions/resendVerificationEmail.ts:54
 msgid "Failed to send email to \"%s\". Please contact an administrator."
 msgstr ""
 
@@ -8227,9 +8241,9 @@ msgstr ""
 #: app/assets/javascripts/app/models/ticket_article.coffee:7
 #: app/assets/javascripts/app/views/cti/caller_log.jst.eco:13
 #: app/assets/javascripts/app/views/ticket_zoom/article_view.jst.eco:16
-#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:84
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:95
-#: app/frontend/shared/entities/ticket-article/action/plugins/email/forward.ts:28
+#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:89
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:96
+#: app/frontend/shared/entities/ticket-article/action/plugins/email/forward.ts:29
 msgid "From"
 msgstr ""
 
@@ -8925,8 +8939,8 @@ msgstr ""
 
 #: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:8
 #: app/assets/javascripts/app/controllers/organization_profile/action_row.coffee:28
-#: app/assets/javascripts/app/controllers/ticket_zoom/sidebar_ticket.coffee:115
-#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:62
+#: app/assets/javascripts/app/controllers/ticket_zoom/sidebar_ticket.coffee:122
+#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:63
 #: app/frontend/apps/desktop/components/CommonHistoryFlyout/CommonHistoryFlyout.vue:71
 #: app/frontend/apps/desktop/pages/organization/components/OrganizationDetailTopBar/actions/history.ts:13
 #: app/frontend/apps/desktop/pages/ticket/components/TicketSidebar/TicketSidebarInformation/TicketSidebarInformationContent.vue:64
@@ -9188,6 +9202,10 @@ msgstr ""
 
 #: app/frontend/apps/desktop/components/CommonImageViewer/FloatingToolbar.vue:23
 msgid "Image actions"
+msgstr ""
+
+#: app/models/store.rb:169
+msgid "Image exceeds the maximum resizable pixel count."
 msgstr ""
 
 #: app/assets/javascripts/app/controllers/ticket_zoom/article_action/whatsapp_reply.coffee:61
@@ -9484,7 +9502,7 @@ msgstr ""
 msgid "Initiate the import process to transfer your data into Zammad. Keep track of the migration progress on this page to be notified as soon as the import is successfully finished."
 msgstr ""
 
-#: app/models/store.rb:100
+#: app/models/store.rb:102
 msgid "Inline content could not be generated."
 msgstr ""
 
@@ -9547,7 +9565,7 @@ msgstr ""
 msgid "Insert the widget code into the source code of every page the chat shall be visible on. It should be placed at the end of the page's source code before the §</body>§ closing tag."
 msgstr ""
 
-#: app/frontend/shared/components/Form/fields/FieldEditor/features/image-handler/ImageHandler.vue:232
+#: app/frontend/shared/components/Form/fields/FieldEditor/features/image-handler/ImageHandler.vue:104
 msgid "Inserting image not possible due to source restrictions"
 msgstr ""
 
@@ -9707,15 +9725,15 @@ msgstr ""
 msgid "Invalid auto wizard file."
 msgstr ""
 
-#: app/controllers/long_polling_controller.rb:82
+#: app/controllers/long_polling_controller.rb:83
 msgid "Invalid client_id in receive loop!"
 msgstr ""
 
-#: app/controllers/long_polling_controller.rb:50
+#: app/controllers/long_polling_controller.rb:51
 msgid "Invalid client_id received!"
 msgstr ""
 
-#: app/models/user.rb:658
+#: app/models/user.rb:660
 msgid "Invalid email '%{email}'"
 msgstr ""
 
@@ -10697,7 +10715,7 @@ msgstr ""
 msgid "Lost network connection"
 msgstr ""
 
-#: app/assets/javascripts/app/lib/app_post/websocket.coffee:365
+#: app/assets/javascripts/app/lib/app_post/websocket.coffee:370
 msgid "Lost network connection!"
 msgstr ""
 
@@ -10753,7 +10771,7 @@ msgstr ""
 msgid "Maintenance Mode"
 msgstr ""
 
-#: app/controllers/application_controller/authenticates.rb:120
+#: app/controllers/application_controller/authenticates.rb:117
 msgid "Maintenance mode enabled!"
 msgstr ""
 
@@ -11249,7 +11267,7 @@ msgid "Mention user"
 msgstr ""
 
 #: app/assets/javascripts/app/controllers/agent_ticket_merge.coffee:7
-#: app/assets/javascripts/app/controllers/ticket_zoom/sidebar_ticket.coffee:121
+#: app/assets/javascripts/app/controllers/ticket_zoom/sidebar_ticket.coffee:128
 #: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/actions/TicketMerge/TicketMergeFlyout.vue:89
 #: app/frontend/apps/desktop/pages/ticket/components/TicketSidebar/TicketSidebarInformation/TicketSidebarInformationContent.vue:71
 msgid "Merge"
@@ -11303,7 +11321,7 @@ msgid "Message for login page."
 msgstr ""
 
 #: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/article-type/plugins/whatsappMessage.ts:16
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:141
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:145
 msgid "Message status"
 msgstr ""
 
@@ -11324,7 +11342,7 @@ msgstr ""
 msgid "Messaging Username"
 msgstr ""
 
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:93
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:94
 msgid "Meta data"
 msgstr ""
 
@@ -11443,7 +11461,7 @@ msgstr ""
 
 #: app/services/service/ai/provider_connection/resolve_embedding_metadata.rb:38
 #: app/services/service/ai/vectordb/create_table.rb:18
-#: lib/ai/provider.rb:285
+#: lib/ai/provider.rb:288
 msgid "Missing embedding model in the provider configuration"
 msgstr ""
 
@@ -11527,7 +11545,7 @@ msgstr ""
 msgid "More information can be found here."
 msgstr ""
 
-#: app/models/user.rb:738
+#: app/models/user.rb:740
 msgid "More than 250 secondary organizations are not allowed."
 msgstr ""
 
@@ -11768,7 +11786,7 @@ msgstr ""
 msgid "Negative feedback"
 msgstr ""
 
-#: app/controllers/sessions_controller.rb:58
+#: app/controllers/sessions_controller.rb:56
 msgid "Neither an SSO environment variable 'REMOTE_USER' nor a 'X-Forwarded-User' header could be found."
 msgstr ""
 
@@ -11912,7 +11930,7 @@ msgstr ""
 #: app/assets/javascripts/app/controllers/_ui_element/notification_matrix.coffee:7
 #: app/assets/javascripts/app/controllers/agent_ticket_create.coffee:490
 #: app/assets/javascripts/app/controllers/customer_ticket_create.coffee:21
-#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:70
+#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:71
 #: app/assets/javascripts/app/views/customer_ticket_create.jst.eco:6
 #: app/assets/javascripts/app/views/navigation/menu_cti_ringing.jst.eco:25
 msgid "New Ticket"
@@ -11940,7 +11958,7 @@ msgstr ""
 msgid "New User Accounts"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:140
+#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:150
 msgid "New Version"
 msgstr ""
 
@@ -12002,6 +12020,8 @@ msgstr ""
 msgid "New text module"
 msgstr ""
 
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:52
+#: app/frontend/apps/desktop/components/CommonHistoryFlyout/event-actions/notified.ts:9
 #: app/frontend/apps/desktop/components/Form/fields/FieldNotifications/FieldNotificationsInput.vue:74
 #: app/frontend/apps/desktop/components/layout/LayoutSidebar/LeftSidebar/MenuContainer/AddMenu/plugins/ticket-create.ts:12
 #: app/frontend/apps/desktop/entities/ticket/composables/useTicketCreateTitle.ts:21
@@ -12280,7 +12300,7 @@ msgstr ""
 msgid "No import in progress."
 msgstr ""
 
-#: app/frontend/apps/desktop/components/CommonPopoverMenu/CommonPopoverMenu.vue:159
+#: app/frontend/apps/desktop/components/CommonPopoverMenu/CommonPopoverMenu.vue:182
 msgid "No items available"
 msgstr ""
 
@@ -12659,7 +12679,7 @@ msgstr ""
 msgid "Notification sender"
 msgstr ""
 
-#: app/frontend/apps/desktop/components/CommonHistoryFlyout/event-actions/notified.ts:14
+#: app/frontend/apps/desktop/components/CommonHistoryFlyout/event-actions/notified.ts:31
 msgid "Notification sent to"
 msgstr ""
 
@@ -12741,8 +12761,12 @@ msgstr ""
 msgid "OAuth URLs are:"
 msgstr ""
 
-#: app/controllers/application_controller/authenticates.rb:102
+#: app/controllers/application_controller/authenticates.rb:99
 msgid "OAuth2 token is expired!"
+msgstr ""
+
+#: app/controllers/application_controller/authenticates.rb:100
+msgid "OAuth2 token is revoked!"
 msgstr ""
 
 #: app/assets/javascripts/app/controllers/_ai/provider_connections.coffee:398
@@ -12845,7 +12869,7 @@ msgstr ""
 msgid "Ollama"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/ticket_zoom/article_action/email_reply.coffee:499
+#: app/assets/javascripts/app/controllers/ticket_zoom/article_action/email_reply.coffee:500
 #: app/frontend/shared/entities/ticket-article/action/plugins/email/selection.ts:41
 msgid "On %s, %s wrote:"
 msgstr ""
@@ -12876,7 +12900,9 @@ msgstr ""
 msgid "One or more self-hosted video servers are invalid. Please check the host names."
 msgstr ""
 
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:59
 #: app/assets/javascripts/app/views/channel/chat.jst.eco:50
+#: app/frontend/apps/desktop/components/CommonHistoryFlyout/event-actions/notified.ts:17
 #: public/assets/chat/chat.coffee:207
 msgid "Online"
 msgstr ""
@@ -12930,11 +12956,19 @@ msgstr ""
 msgid "Only packages from known, trusted, and verified sources should be installed."
 msgstr ""
 
+#: app/controllers/long_polling_controller.rb:92
+msgid "Only session based authentication is supported!"
+msgstr ""
+
 #: app/assets/javascripts/app/views/time_accounting/by_activity.jst.eco:37
 #: app/assets/javascripts/app/views/time_accounting/by_customer.jst.eco:23
 #: app/assets/javascripts/app/views/time_accounting/by_organization.jst.eco:21
 #: app/assets/javascripts/app/views/time_accounting/by_ticket.jst.eco:35
 msgid "Only the 20 most recent records are displayed. Download to view the full list."
+msgstr ""
+
+#: app/controllers/settings_controller.rb:27
+msgid "Only the product logo can be updated with an image."
 msgstr ""
 
 #: db/seeds/settings.rb:30
@@ -13262,7 +13296,7 @@ msgid "Original Translation"
 msgstr ""
 
 #: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleBubble/ArticleBubbleBlockedContentWarning.vue:41
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:60
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:61
 #: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleRemoteContentBadge.vue:21
 msgid "Original formatting"
 msgstr ""
@@ -13844,7 +13878,7 @@ msgstr ""
 msgid "Please contact your administrator."
 msgstr ""
 
-#: lib/selector/sql.rb:200
+#: lib/selector/sql.rb:201
 msgid "Please enable execution_time feature to use it (currently only allowed for triggers and schedulers)"
 msgstr ""
 
@@ -13902,7 +13936,7 @@ msgstr ""
 msgid "Please proceed to login"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/ticket_zoom/article_action/email_reply.coffee:469
+#: app/assets/javascripts/app/controllers/ticket_zoom/article_action/email_reply.coffee:470
 msgid "Please provide a recipient in \"TO\" or \"CC\"."
 msgstr ""
 
@@ -14381,7 +14415,7 @@ msgid "Rating can only be set once"
 msgstr ""
 
 #: app/assets/javascripts/app/controllers/article_view/item.coffee:107
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:45
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:46
 msgid "Raw"
 msgstr ""
 
@@ -14603,7 +14637,7 @@ msgstr ""
 msgid "Relevance score threshold"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:123
+#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:133
 #: app/assets/javascripts/app/controllers/widget/session_message.coffee:13
 msgid "Reload"
 msgstr ""
@@ -14874,7 +14908,7 @@ msgid "Reply to last article"
 msgstr ""
 
 #: app/assets/javascripts/app/views/ticket_zoom/article_view.jst.eco:22
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:96
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:97
 msgid "Reply-To"
 msgstr ""
 
@@ -14955,7 +14989,7 @@ msgid "Requires the setup of the two-factor authentication for certain user role
 msgstr ""
 
 #: app/assets/javascripts/app/controllers/_plugin/user_signup_check.coffee:38
-#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:84
+#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:85
 #: app/assets/javascripts/app/views/signup/verify.jst.eco:11
 #: app/frontend/apps/desktop/pages/authentication/views/Signup.vue:149
 #: app/frontend/apps/desktop/pages/user/components/UserDetailTopBar/actions/resendVerificationEmail.ts:15
@@ -15036,7 +15070,7 @@ msgstr ""
 msgid "Resize column"
 msgstr ""
 
-#: app/frontend/shared/components/Form/fields/FieldEditor/features/image-handler/ImageHandler.vue:263
+#: app/frontend/shared/components/Form/fields/FieldEditor/features/image-handler/ImageHandler.vue:135
 msgid "Resize frame"
 msgstr ""
 
@@ -15339,7 +15373,7 @@ msgstr ""
 msgid "SSO"
 msgstr ""
 
-#: app/controllers/sessions_controller.rb:288
+#: app/controllers/sessions_controller.rb:292
 msgid "SSO request from untrusted IP address."
 msgstr ""
 
@@ -15797,11 +15831,11 @@ msgstr ""
 msgid "Secondary organizations"
 msgstr ""
 
-#: app/models/user.rb:726
+#: app/models/user.rb:728
 msgid "Secondary organizations are only allowed when the primary organization is given."
 msgstr ""
 
-#: app/models/user.rb:732
+#: app/models/user.rb:734
 msgid "Secondary organizations cannot include the primary organization."
 msgstr ""
 
@@ -15820,7 +15854,7 @@ msgstr ""
 #: app/frontend/apps/desktop/pages/personal-setting/views/PersonalSetting/plugins/twoFactorAuth.ts:10
 #: app/frontend/apps/desktop/pages/ticket/components/TicketCreate/TicketCreateContent.vue:183
 #: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/article-type/plugins/email.ts:26
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:148
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:152
 #: app/frontend/apps/mobile/pages/ticket/views/TicketCreate.vue:303
 #: app/frontend/shared/entities/ticket/composables/useTicketEditForm.ts:296
 #: db/seeds/permissions.rb:209
@@ -15885,7 +15919,7 @@ msgstr ""
 msgid "Security keys are hardware or software credentials that can be used as your two-factor authentication method."
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:118
+#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:128
 msgid "Security token verification failed"
 msgstr ""
 
@@ -16550,7 +16584,7 @@ msgstr ""
 msgid "Show matching tickets in the warning"
 msgstr ""
 
-#: app/frontend/apps/mobile/pages/ticket/composable/useTicketArticleContext.ts:80
+#: app/frontend/apps/mobile/pages/ticket/composable/useTicketArticleContext.ts:81
 msgid "Show meta data"
 msgstr ""
 
@@ -16842,11 +16876,11 @@ msgstr ""
 msgid "Some Text"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:61
+#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:71
 msgid "Some system settings have changed, Zammad is restarting. Please wait until Zammad is back again."
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:80
+#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:90
 msgid "Some system settings have changed, please restart all Zammad processes!"
 msgstr ""
 
@@ -17201,8 +17235,8 @@ msgstr ""
 #: app/assets/javascripts/app/views/ticket_zoom/article_new.jst.eco:64
 #: app/assets/javascripts/app/views/ticket_zoom/article_view.jst.eco:40
 #: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/article-type/plugins/email.ts:14
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:99
-#: app/frontend/shared/entities/ticket-article/action/plugins/email/forward.ts:26
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:100
+#: app/frontend/shared/entities/ticket-article/action/plugins/email/forward.ts:27
 #: app/frontend/shared/entities/ticket/composables/useTicketEditForm.ts:285
 msgid "Subject"
 msgstr ""
@@ -17363,6 +17397,10 @@ msgstr ""
 
 #: app/assets/javascripts/app/views/keyboard_shortcuts.jst.eco:16
 msgid "Switch back to old layout"
+msgstr ""
+
+#: app/frontend/shared/composables/useUnknownAddressDetection.ts:53
+msgid "Switch here"
 msgstr ""
 
 #: app/assets/javascripts/app/views/keyboard_shortcuts.jst.eco:14
@@ -17623,7 +17661,7 @@ msgstr ""
 msgid "Text field"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/ticket_zoom/article_action/email_reply.coffee:465
+#: app/assets/javascripts/app/controllers/ticket_zoom/article_action/email_reply.coffee:466
 #: app/assets/javascripts/app/controllers/ticket_zoom/article_new.coffee:379
 msgid "Text missing"
 msgstr ""
@@ -17641,7 +17679,7 @@ msgstr ""
 msgid "Text modules are …"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/ticket_zoom/article_action/email_reply.coffee:483
+#: app/assets/javascripts/app/controllers/ticket_zoom/article_action/email_reply.coffee:484
 msgid "Text needed"
 msgstr ""
 
@@ -17701,8 +17739,8 @@ msgstr ""
 msgid "The 'logout_token' is invalid."
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/ticket_zoom/channel.coffee:23
-#: app/frontend/shared/entities/ticket/channel/plugins/whatsapp.ts:26
+#: app/assets/javascripts/app/controllers/ticket_zoom/channel.coffee:22
+#: app/frontend/shared/entities/ticket/channel/plugins/whatsapp.ts:25
 msgid "The 24 hour customer service window is now closed, no further WhatsApp messages can be sent."
 msgstr ""
 
@@ -17782,11 +17820,15 @@ msgstr ""
 msgid "The PGP signature key has been revoked."
 msgstr ""
 
+#: app/controllers/sessions_controller.rb:57
+msgid "The SSO environment variables and headers contain different user logins."
+msgstr ""
+
 #: app/assets/javascripts/app/controllers/_channel/telegram.coffee:159
 msgid "The Telegram bot could not be saved."
 msgstr ""
 
-#: lib/telegram_helper.rb:686
+#: lib/telegram_helper.rb:688
 msgid "The Telegram file is larger than the allowed 20 MB."
 msgstr ""
 
@@ -18028,7 +18070,7 @@ msgstr ""
 msgid "The chosen unit will be used for display only and will not affect stored values."
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:104
+#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:114
 msgid "The configuration of Zammad has changed, please reload your browser."
 msgstr ""
 
@@ -18172,7 +18214,7 @@ msgstr ""
 msgid "The event could not be processed."
 msgstr ""
 
-#: lib/telegram_helper.rb:694
+#: lib/telegram_helper.rb:696
 msgid "The file could not be retrieved from the bot."
 msgstr ""
 
@@ -18282,7 +18324,7 @@ msgstr ""
 msgid "The import was successful."
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:119
+#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:129
 msgid "The included security token is invalid. This may be just a temporary error, please reload your browser, and try again."
 msgstr ""
 
@@ -18542,7 +18584,7 @@ msgstr ""
 msgid "The provided payload is invalid. Please check your syntax."
 msgstr ""
 
-#: app/controllers/application_controller/authenticates.rb:99
+#: app/controllers/application_controller/authenticates.rb:98
 #: app/controllers/integration/check_mk_controller.rb:139
 #: app/frontend/apps/desktop/pages/authentication/views/PasswordResetVerify.vue:103
 #: app/services/service/user/password_reset/update.rb:28
@@ -18612,7 +18654,7 @@ msgid "The required PGP passphrase is missing."
 msgstr ""
 
 #: app/controllers/users_controller.rb:658
-#: app/services/service/user/add_first_admin.rb:18
+#: app/services/service/user/add_first_admin.rb:16
 msgid "The required attribute 'email' is missing."
 msgstr ""
 
@@ -18652,7 +18694,7 @@ msgstr ""
 msgid "The required parameter 'application_secret' is missing."
 msgstr ""
 
-#: app/controllers/channels_sms_controller.rb:100
+#: app/controllers/channels_sms_controller.rb:104
 msgid "The required parameter 'area' is missing."
 msgstr ""
 
@@ -18690,7 +18732,7 @@ msgstr ""
 msgid "The required parameter 'id' is missing."
 msgstr ""
 
-#: lib/search_index_backend.rb:713
+#: lib/search_index_backend.rb:718
 msgid "The required parameter 'key' is missing."
 msgstr ""
 
@@ -18714,7 +18756,7 @@ msgstr ""
 msgid "The required parameter 'options.adapter' is missing."
 msgstr ""
 
-#: app/controllers/channels_sms_controller.rb:104
+#: app/controllers/channels_sms_controller.rb:108
 msgid "The required parameter 'params' is missing."
 msgstr ""
 
@@ -18750,7 +18792,7 @@ msgstr ""
 msgid "The required parameter 'user_id' is missing."
 msgstr ""
 
-#: lib/search_index_backend.rb:714
+#: lib/search_index_backend.rb:719
 msgid "The required parameter 'value' is missing."
 msgstr ""
 
@@ -18758,7 +18800,7 @@ msgstr ""
 msgid "The required value 'group_id' is missing."
 msgstr ""
 
-#: lib/ai/provider.rb:252
+#: lib/ai/provider.rb:255
 #: lib/ai/provider/concerns/lists_models.rb:116
 #: lib/ai/provider/custom_open_ai.rb:82
 msgid "The response could not be processed."
@@ -18918,6 +18960,7 @@ msgid "The system report provides a summarized version of the system state and c
 msgstr ""
 
 #: app/services/service/system/check_setup.rb:25
+#: app/services/service/user/add_first_admin.rb:39
 msgid "The system setup cannot be started, because there is another one running or it was completed before."
 msgstr ""
 
@@ -19019,7 +19062,7 @@ msgstr ""
 msgid "The type of the private key is wrong."
 msgstr ""
 
-#: app/controllers/settings_controller.rb:41
+#: app/controllers/settings_controller.rb:44
 msgid "The uploaded image could not be processed. Need data:image in logo or logo_resize param."
 msgstr ""
 
@@ -19041,13 +19084,17 @@ msgstr ""
 msgid "The user's 'preferred_username' could not be extracted from 'id_token'."
 msgstr ""
 
-#: app/controllers/sessions_controller.rb:273
+#: app/controllers/sessions_controller.rb:277
 #: app/graphql/gql/mutations/two_factor_method_initiate_authentication.rb:36
 msgid "The username or password is incorrect."
 msgstr ""
 
 #: app/models/core_workflow/result.rb:40
 msgid "The value of the parameter 'payload->class_name' is invalid."
+msgstr ""
+
+#: app/models/setting/validation/backend_class.rb:15
+msgid "The value of this setting has an invalid format."
 msgstr ""
 
 #: app/assets/javascripts/app/controllers/_ai/knowledge_base_features.coffee:137
@@ -19529,6 +19576,14 @@ msgstr ""
 msgid "This is not a valid X509 certificate. Please check the certificate format."
 msgstr ""
 
+#: app/frontend/shared/composables/useUnknownAddressDetection.ts:49
+msgid "This isn't the address Zammad is set up for."
+msgstr ""
+
+#: app/assets/javascripts/app/controllers/_plugin/unknown_address_detection.coffee:37
+msgid "This isn't the address Zammad is set up for. Switch here."
+msgstr ""
+
 #: app/frontend/apps/desktop/components/CommonSelect/CommonSelectItem.vue:70
 #: app/frontend/apps/desktop/components/Form/fields/FieldTreeSelect/FieldTreeSelectInputDropdownItem.vue:102
 msgid "This item expands to show more options"
@@ -19672,7 +19727,7 @@ msgstr ""
 msgid "This signature is inactive, it won't be included in the reply."
 msgstr ""
 
-#: app/services/service/user/add_first_admin.rb:14
+#: app/services/service/user/add_first_admin.rb:34
 msgid "This system has already been configured and an administrator account exists."
 msgstr ""
 
@@ -19754,7 +19809,7 @@ msgstr ""
 #: app/assets/javascripts/app/controllers/_ui_element/core_workflow_condition.coffee:12
 #: app/assets/javascripts/app/controllers/_ui_element/object_perform_action.coffee:6
 #: app/assets/javascripts/app/controllers/_ui_element/object_selector.coffee:6
-#: app/assets/javascripts/app/controllers/ticket_zoom/sidebar_ticket.coffee:23
+#: app/assets/javascripts/app/controllers/ticket_zoom/sidebar_ticket.coffee:25
 #: app/assets/javascripts/app/models/ai_text_tool.coffee:14
 #: app/assets/javascripts/app/models/job.coffee:8
 #: app/assets/javascripts/app/models/signature.coffee:15
@@ -19970,10 +20025,17 @@ msgstr ""
 msgid "Ticket customer updated successfully."
 msgstr ""
 
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:55
 #: app/assets/javascripts/app/controllers/_profile/notification.coffee:71
 #: app/assets/javascripts/app/controllers/_ui_element/notification_matrix.coffee:13
+#: app/frontend/apps/desktop/components/CommonHistoryFlyout/event-actions/notified.ts:12
 #: app/frontend/apps/desktop/components/Form/fields/FieldNotifications/FieldNotificationsInput.vue:89
 msgid "Ticket escalation"
+msgstr ""
+
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:56
+#: app/frontend/apps/desktop/components/CommonHistoryFlyout/event-actions/notified.ts:13
+msgid "Ticket escalation warning"
 msgstr ""
 
 #: app/assets/javascripts/app/lib/mixins/ticket_mass_updatable.coffee:34
@@ -20031,8 +20093,10 @@ msgstr ""
 msgid "Ticket overviews"
 msgstr ""
 
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:54
 #: app/assets/javascripts/app/controllers/_profile/notification.coffee:69
 #: app/assets/javascripts/app/controllers/_ui_element/notification_matrix.coffee:11
+#: app/frontend/apps/desktop/components/CommonHistoryFlyout/event-actions/notified.ts:11
 #: app/frontend/apps/desktop/components/Form/fields/FieldNotifications/FieldNotificationsInput.vue:84
 msgid "Ticket reminder reached"
 msgstr ""
@@ -20079,9 +20143,11 @@ msgstr ""
 msgid "Ticket title"
 msgstr ""
 
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:53
 #: app/assets/javascripts/app/controllers/_profile/notification.coffee:67
 #: app/assets/javascripts/app/controllers/_ui_element/notification_matrix.coffee:9
 #: app/assets/javascripts/app/controllers/_ui_element/postmaster_set.coffee:11
+#: app/frontend/apps/desktop/components/CommonHistoryFlyout/event-actions/notified.ts:10
 #: app/frontend/apps/desktop/components/Form/fields/FieldNotifications/FieldNotificationsInput.vue:79
 msgid "Ticket update"
 msgstr ""
@@ -20325,9 +20391,9 @@ msgstr ""
 #: app/assets/javascripts/app/views/cti/caller_log.jst.eco:18
 #: app/assets/javascripts/app/views/ticket_zoom/article_new.jst.eco:52
 #: app/assets/javascripts/app/views/ticket_zoom/article_view.jst.eco:28
-#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:95
-#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:97
-#: app/frontend/shared/entities/ticket-article/action/plugins/email/forward.ts:29
+#: app/frontend/apps/desktop/pages/ticket/components/TicketDetailView/ArticleMeta/useArticleMeta.ts:100
+#: app/frontend/apps/mobile/pages/ticket/components/TicketDetailView/ArticleMetadataDialog.vue:98
+#: app/frontend/shared/entities/ticket-article/action/plugins/email/forward.ts:30
 #: app/frontend/shared/entities/ticket/composables/useTicketEditForm.ts:234
 #: db/seeds/object_manager_attributes.rb:496
 msgid "To"
@@ -20618,7 +20684,7 @@ msgstr ""
 msgid "Try using your security key again."
 msgstr ""
 
-#: app/assets/javascripts/app/lib/app_post/websocket.coffee:368
+#: app/assets/javascripts/app/lib/app_post/websocket.coffee:373
 #: app/frontend/apps/desktop/components/ConnectionLostDialog/ConnectionLostDialog.vue:25
 msgid "Trying to reconnect…"
 msgstr ""
@@ -21163,7 +21229,7 @@ msgstr ""
 #. This is the template file app/views/mailer/ticket_article_update_reaction/en.html.erb in ERB/HTML format.
 #. Please make sure to translate it to a valid corresponding output structure.
 #: app/views/mailer/ticket_article_update_reaction/en.html.erb
-msgid "Updated ticket article (#{ticket.title})\n\n<div>Hi #{recipient.firstname},</div>\n<br>\n<div>\n<%= @objects[:article].preferences.dig('whatsapp', 'reaction', 'author') %> reacted with a <%= @objects[:article].preferences.dig('whatsapp', 'reaction', 'emoji') %> to message from #{article.created_by.fullname}:\n</div>\n<br>\n<% if @objects[:article] %>\n  <div>\n    <blockquote type=\"cite\">\n    #{article.body_as_html}\n    </blockquote>\n  </div>\n<% end %>\n<br>\n<div>\n  <a href=\"#{config.http_type}://#{config.fqdn}/#ticket/zoom/#{ticket.id}/#{article.id}\" target=\"zammad_app\">View this in #{config.product_name}</a>\n</div>\n"
+msgid "Updated ticket article (#{ticket.title})\n\n<div>Hi #{recipient.firstname},</div>\n<br>\n<div>\n<%= h @objects[:article].preferences.dig('whatsapp', 'reaction', 'author') %> reacted with a <%= h @objects[:article].preferences.dig('whatsapp', 'reaction', 'emoji') %> to message from #{article.created_by.fullname}:\n</div>\n<br>\n<% if @objects[:article] %>\n  <div>\n    <blockquote type=\"cite\">\n    #{article.body_as_html}\n    </blockquote>\n  </div>\n<% end %>\n<br>\n<div>\n  <a href=\"#{config.http_type}://#{config.fqdn}/#ticket/zoom/#{ticket.id}/#{article.id}\" target=\"zammad_app\">View this in #{config.product_name}</a>\n</div>\n"
 msgstr ""
 
 #: app/assets/javascripts/app/controllers/_application_controller/_generic_index.coffee:17
@@ -21235,7 +21301,7 @@ msgstr ""
 msgid "Uploading file: %s"
 msgstr ""
 
-#: app/frontend/shared/components/Form/fields/FieldEditor/features/image-handler/ImageUploadInsideOtherEditor.vue:6
+#: app/frontend/shared/components/Form/fields/FieldEditor/features/image-handler/ImageUploadInsideOtherEditor.vue:32
 msgid "Uploading…"
 msgstr ""
 
@@ -21483,7 +21549,7 @@ msgstr ""
 msgid "User is inactive"
 msgstr ""
 
-#: app/controllers/sessions_controller.rb:171
+#: app/controllers/sessions_controller.rb:175
 #: app/frontend/apps/desktop/components/Search/QuickSearch/entities/User.vue:25
 msgid "User is inactive."
 msgstr ""
@@ -21560,7 +21626,7 @@ msgstr ""
 #: app/assets/javascripts/app/controllers/cti.coffee:227
 #: app/assets/javascripts/app/controllers/ticket_zoom/sidebar_customer.coffee:89
 #: app/assets/javascripts/app/controllers/user.coffee:3
-#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:26
+#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:27
 #: app/assets/javascripts/app/views/import/freshdesk.jst.eco:85
 #: app/assets/javascripts/app/views/import/kayako.jst.eco:89
 #: app/assets/javascripts/app/views/import/otrs.jst.eco:70
@@ -21956,7 +22022,7 @@ msgstr ""
 
 #: app/assets/javascripts/app/views/telegram/bot_add.jst.eco:21
 #: app/assets/javascripts/app/views/telegram/bot_edit.jst.eco:18
-#: lib/telegram_helper.rb:640
+#: lib/telegram_helper.rb:642
 msgid "Welcome! Feel free to ask me a question!"
 msgstr ""
 
@@ -22357,6 +22423,11 @@ msgstr ""
 msgid "You can use the following script to post the data to %s."
 msgstr ""
 
+#: app/assets/javascripts/app/controllers/user_profile/action_row.coffee:88
+#: app/frontend/apps/desktop/pages/user/components/UserDetailTopBar/actions/resendVerificationEmail.ts:22
+msgid "You cannot resend the verification email to an inactive user. Activate them first."
+msgstr ""
+
 #: app/assets/javascripts/app/controllers/user.coffee:156
 msgid "You cannot view or change the group permissions of an inactive user. Activate them first to manage their permissions."
 msgstr ""
@@ -22386,8 +22457,8 @@ msgstr ""
 msgid "You don't have the necessary permissions to access this page."
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/ticket_zoom/channel.coffee:29
-#: app/frontend/shared/entities/ticket/channel/plugins/whatsapp.ts:35
+#: app/assets/javascripts/app/controllers/ticket_zoom/channel.coffee:28
+#: app/frontend/shared/entities/ticket/channel/plugins/whatsapp.ts:34
 msgid "You have a 24 hour window to send WhatsApp messages in this conversation. The customer service window closes %s."
 msgstr ""
 
@@ -22674,7 +22745,7 @@ msgstr ""
 msgid "Zammad is currently in maintenance mode. Only administrators can log in. Please wait until the maintenance window is over."
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:60
+#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:70
 msgid "Zammad is restarting…"
 msgstr ""
 
@@ -22682,7 +22753,7 @@ msgstr ""
 msgid "Zammad looks like this for \"%s\""
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:79
+#: app/assets/javascripts/app/controllers/_plugin/maintenance.coffee:89
 msgid "Zammad requires a restart!"
 msgstr ""
 
@@ -22877,7 +22948,7 @@ msgstr ""
 msgid "checked"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:131
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:149
 msgid "checked checklist item '%s'"
 msgstr ""
 
@@ -23004,11 +23075,11 @@ msgstr ""
 msgid "d"
 msgstr ""
 
-#: app/models/concerns/can_be_published.rb:191
+#: app/models/concerns/can_be_published.rb:207
 msgid "date must be no earlier than internal date"
 msgstr ""
 
-#: app/models/concerns/can_be_published.rb:197
+#: app/models/concerns/can_be_published.rb:213
 msgid "date must be no earlier than published date"
 msgstr ""
 
@@ -23159,7 +23230,7 @@ msgstr ""
 msgid "email"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:104
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:122
 msgid "email sent to '%s'"
 msgstr ""
 
@@ -23243,7 +23314,7 @@ msgstr ""
 msgid "forward"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:156
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:174
 msgid "from"
 msgstr ""
 
@@ -23565,7 +23636,7 @@ msgstr ""
 msgid "is the wrong length (should be 1 character)"
 msgstr ""
 
-#: app/models/user.rb:925
+#: app/models/user.rb:927
 msgid "is too long"
 msgstr ""
 
@@ -23858,8 +23929,12 @@ msgstr ""
 msgid "note"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:102
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:48
 msgid "notification sent to '%s'"
+msgstr ""
+
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:61
+msgid "notification sent to '%s' (%s: %s)"
 msgstr ""
 
 #: app/frontend/apps/desktop/pages/personal-setting/views/PersonalSetting/plugins/notifications.ts:25
@@ -23950,7 +24025,7 @@ msgstr ""
 msgid "reached"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:138
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:156
 msgid "reacted with a %s to message from %s '%s'"
 msgstr ""
 
@@ -23989,7 +24064,7 @@ msgstr ""
 msgid "remove option"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:141
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:159
 msgid "removed reaction to message from %s '%s'"
 msgstr ""
 
@@ -24194,7 +24269,7 @@ msgstr ""
 msgid "theme,color,style,dark mode,night mode,light mode"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:128
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:146
 msgid "this ticket was merged into ticket %s"
 msgstr ""
 
@@ -24203,7 +24278,7 @@ msgstr ""
 msgid "ticket"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:121
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:139
 msgid "ticket %s was merged into this ticket"
 msgstr ""
 
@@ -24243,15 +24318,15 @@ msgstr ""
 msgid "translation,locale,localization"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:108
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:126
 msgid "trigger '%s' was performed because pending reminder was reached"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:110
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:128
 msgid "trigger '%s' was performed because ticket was escalated"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:112
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:130
 msgid "trigger '%s' was performed because ticket will escalate soon"
 msgstr ""
 
@@ -24280,7 +24355,7 @@ msgstr ""
 msgid "unassign user"
 msgstr ""
 
-#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:133
+#: app/assets/javascripts/app/controllers/_application_controller/_modal_generic_history.coffee:151
 msgid "unchecked checklist item '%s'"
 msgstr ""
 

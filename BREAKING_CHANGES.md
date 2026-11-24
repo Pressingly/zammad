@@ -73,6 +73,192 @@ instead.
 
 ## 7.2
 
+### The ticket search matches only customer visible data for customers
+
+**Who is affected?** Customers, and integrations that search tickets with a `ticket.customer` account
+through the search box, `GET /api/v1/tickets/search` or the GraphQL search, and rely on matches in
+internal articles, tags, hidden attributes or the email address of organization colleagues.
+
+The ticket search applied the access check only to which tickets may match. The search term itself
+was matched against the whole ticket: internal articles with their attachments and, with
+Elasticsearch, tags, mentions, checklists and every indexed attribute, including arbitrary
+`field:value` syntax. A customer could therefore learn whether an internal note contains a term by
+watching which of their tickets show up. For the customer access, the search now matches only
+non-internal articles with their attachments and the ticket fields `title`, `number`, `hook_number`,
+`state.name`, `customer.firstname`, `customer.lastname` and `organization.name`. Field syntax on any
+other field is treated as literal text. The `condition` parameter of `GET /api/v1/tickets/search` and
+the `filter` argument of the GraphQL search accept only ticket attributes visible to customers plus
+`customer.firstname`, `customer.lastname`, `owner.firstname`, `owner.lastname` and
+`organization.name`; any other condition returns no result for a customer, and for a user with both
+roles only tickets of their agent groups. Agents are not affected, and no reindex is needed.
+
+⚠️ Adapt integrations that search as a customer and rely on such matches, for example use a
+colleague's name instead of their email address to find their tickets.
+
+**Related advisory:** [GHSA-32wx-47p6-qqvw](https://github.com/zammad/zammad/security/advisories/GHSA-32wx-47p6-qqvw)
+
+### The SSO login rejects conflicting login sources, and the shipped proxy configurations clear `Remote-User`
+
+**Who is affected?** Admins of package installations whose nginx or Apache configuration was set up
+from the files shipped with an earlier version, and admins of SSO setups whose proxy passes more
+than one login source to Zammad.
+
+`GET /auth/sso` took the login from the first present of `REMOTE_USER`, the `Remote-User` request
+header (`HTTP_REMOTE_USER`) and `X-Forwarded-User`, in that order. Behind a reverse proxy,
+`Remote-User` is just a header the client can send itself, and the shipped nginx and Apache
+configurations only cleared `X-Forwarded-User`, so a client could override the login set by the proxy
+with its own `Remote-User` header. The login now collects all present sources and answers
+`401 Unauthorized` when they name different logins (compared case-insensitively). Setups that
+provide exactly one source, or the same login in several sources, keep working.
+
+The shipped `contrib/nginx/zammad.conf`, `contrib/nginx/zammad_ssl.conf`,
+`contrib/apache2/zammad.conf` and `contrib/apache2/zammad_ssl.conf` now also clear the `Remote-User`
+header next to `X-Forwarded-User`. The Docker images rebuild their nginx configuration from the
+shipped one on every start, so the change applies to them automatically. Package installations keep
+the web server configuration they already have.
+
+⚠️ Add `proxy_set_header Remote-User "";` (nginx) respectively `RequestHeader unset Remote-User`
+(Apache) next to the existing `X-Forwarded-User` line of an existing web server configuration. In an
+SSO setup, let the proxy set exactly one of the two headers and clear the other.
+
+**Related advisory:** [GHSA-4749-hj8h-f4jf](https://github.com/zammad/zammad/security/advisories/GHSA-4749-hj8h-f4jf)
+
+### Settings naming a backend class accept only the backend they are made for
+
+**Who is affected?** Developers of add-ons that register a postmaster filter, transaction backend,
+dashboard stats backend, service backend or ticket number generator through a setting, and
+integrations or scripts that write such a setting through `PUT /api/v1/settings/{id}` or
+`Setting.set`.
+
+The 50 settings whose value names a Ruby class ran whatever loaded class they named: the `adapter` of
+`auth_internal`, `auth_developer` and `auth_ldap`, `image_backend`, `geo_ip_backend`,
+`geo_location_backend`, `geo_calendar_backend`, `ticket_number`, `import_backends`, the `Stats::*`
+dashboard backends, the postmaster filter registrations such as `0000_postmaster_filter_trusted` and
+the transaction backend registrations such as `0100_trigger`. They are now checked when they are
+saved and where they are used:
+
+- The postmaster filter, transaction backend, dashboard stats and authentication settings accept only
+  the class they were created with. `ticket_number` and the service backends accept only one of their
+  select options, `import_backends` only subclasses of `Import::IntegrationBase`. Any other value is
+  answered with `422` by `PUT /api/v1/settings/{id}` and with `ActiveRecord::RecordInvalid` by
+  `Setting.set`. On update, a postmaster filter, transaction backend, dashboard stats or
+  authentication setting storing another class is reset to the one it was created with, while the
+  other settings keep a stored value the check rejects; both are logged as a warning.
+- A class outside `Channel::Filter`, `Transaction`, `Stats`, `Ticket::Number`, `Service::Image`,
+  `Service::GeoIp`, `Service::GeoLocation` and `Service::GeoCalendar`, or an authentication adapter
+  that is no subclass of `Auth::Backend::Base`, is no longer run: a postmaster pre filter outside
+  `Channel::Filter` fails the processing of every mail, a post filter, transaction backend, import
+  backend or authentication adapter is skipped with an error in the log, a service backend acts as
+  switched off, and `ticket_number` fails the creation of every ticket.
+
+⚠️ Define add-on backends in the namespace that loads them, e.g. `Channel::Filter::MyAddonCheck`, and
+register each under a setting of its own. An add-on migration that renames such a class has to set
+the new name as the setting's `state_initial` as well as its `state_current`.
+
+**Related advisory:** [GHSA-6wx3-xr2r-5xqf](https://github.com/zammad/zammad/security/advisories/GHSA-6wx3-xr2r-5xqf)
+
+### The settings API limits delegated admins to the settings their permissions cover
+
+**Who is affected?** Roles and API tokens holding an admin sub-permission such as `admin.security`
+without `admin` that read or write settings through `/api/v1/settings`, and developers of add-ons
+that ship settings without a permission.
+
+A setting without a `permission` in its preferences could be read and changed through the settings
+API by any user or token holding an admin sub-permission. Such a setting now requires `admin`. Every
+setting shipped with Zammad now declares a permission: the ones that admin pages change for
+delegated admins carry that page's permission, e.g. `session_timeout` requires `admin.security` and
+`language_detection_article` requires `admin.ticket`.
+
+79 settings now require `admin`, among them the Elasticsearch connection and index settings
+(`es_url`, `es_user`, `es_password`, `es_index`, `es_ssl_verify`, …), `import_mode` and the
+importers' endpoints and credentials (`import_*`), `developer_mode`, `system_init_done`,
+`system_bcc`, the WebSocket settings, the postmaster filter and transaction backend registrations,
+and state such as `app_version`. The full list is in the `RestrictAccessToInternalSettings`
+migration. For a role or token holding sub-permissions only, they are left out of
+`GET /api/v1/settings` and `GET /api/v1/settings/area/:area`, and `GET` and
+`PUT /api/v1/settings/:id` and `POST /api/v1/settings/reset/:id` answer `403 Forbidden` for them.
+Full admins keep access to all of them.
+
+⚠️ Give the `admin` permission to roles and API tokens that read or change any of these settings.
+Declare a `permission` in the preferences of settings that an add-on's admin pages change, e.g.
+`preferences: { permission: ['admin.my_addon'] }`.
+
+**Related advisory:** [GHSA-qqr9-58h5-hxc4](https://github.com/zammad/zammad/security/advisories/GHSA-qqr9-58h5-hxc4)
+
+### Templates written in the admin interface only resolve settings sent to the frontend
+
+**Who is affected?** Admins whose triggers, scheduler jobs, macros, text modules, signatures, AI
+text tools, AI agents, link templates, external data source search URLs or setting values use a
+`#{config.<name>}` placeholder for a setting not sent to the frontend, such as `postmaster_max_size`.
+
+Such a placeholder resolved every setting. It now resolves only settings sent to the frontend, plus
+`ticket_hook_divider` and `notification_sender`; any other setting renders as a missing object
+(`#{config.<name> / no such object}` or `-`), and in an AI agent stays as the placeholder itself. A
+setting value takes in only settings its own readers may see, so a public setting such as
+`product_name` no longer takes in `system_id`, which is sent to logged-in users only. The
+placeholders Zammad ships (`product_name`, `fqdn`, `http_type`, `ticket_hook`) keep working.
+
+⚠️ Replace such placeholders with the literal value before updating. The update logs every affected
+template and setting value under `Templates referring to settings` in the Rails log.
+
+**Related advisory:** [GHSA-4x57-g5xr-67vq](https://github.com/zammad/zammad/security/advisories/GHSA-4x57-g5xr-67vq)
+
+### `PUT /api/v1/settings/{id}` only updates the value of the setting
+
+**Who is affected?** Integrations that send anything other than `state_current.value` through
+`PUT /api/v1/settings/{id}`.
+
+The endpoint applied the setting's `title` and `description` and new `preferences` keys from its
+payload, and stored `state_current` as sent. It now applies `state_current.value` only. Other
+attributes, and keys next to `value` in `state_current`, are ignored, and the response still answers
+`200` with the record, so such an integration gets a success response while nothing but the value
+changes. A request without `state_current.value` is rejected with `422`.
+
+⚠️ Send only `state_current: { value: … }` to this endpoint. The title, description and preferences
+of a setting are maintained by Zammad itself.
+
+**Related advisory:** [GHSA-772p-w6hj-6p6v](https://github.com/zammad/zammad/security/advisories/GHSA-772p-w6hj-6p6v)
+
+### Templates written in the admin interface only reach ticket, article, user, organization and group data
+
+**Who is affected?** Admins whose triggers, scheduler jobs, macros, text modules, signatures, AI
+text tools, AI agents, link templates or external data source search URLs use a placeholder that
+steps into another object, such as `#{ticket.group.email_address.email}` or `#{ticket.owner.roles}`,
+or that calls a method other than a documented one, such as `#{ticket.title.reverse}`.
+
+A placeholder could call any method on the object it reached, so a chain could lead from a ticket to
+every record in the database. A placeholder now reaches tickets, articles, users, organizations,
+groups, ticket states and priorities and article types and senders: their attributes except
+`password` and `preferences`, custom object attributes included, the associations among them, and
+the documented helpers such as `fullname`, `longname`, `tags`, `body_as_html` and `avatar`. In an
+external data source search URL, `#{search.term}` keeps working. On a plain value only `first` and
+`last` (optionally with a count), `downcase`, `upcase`, `strip`, `to_s`, `text2html`, `size` and
+`count` are allowed. Any other step renders as `#{<placeholder> / not allowed}` (or `-` where the
+renderer hides errors). The placeholders documented in the admin documentation keep working.
+
+⚠️ Replace such placeholders before updating, for example with a trigger condition or a custom
+object attribute that carries the value. Unlike for settings, the update does not list the affected
+templates: search the triggers, scheduler jobs, macros, text modules, signatures, AI text tools, AI
+agents, link templates and external data source search URLs by hand for placeholders that leave the
+objects named above.
+
+**Related advisory:** [GHSA-gffj-jpc4-76hv](https://github.com/zammad/zammad/security/advisories/GHSA-gffj-jpc4-76hv)
+
+### `PUT /api/v1/online_notifications/{id}` only updates `seen`
+
+**Who is affected?** Integrations that write any attribute other than `seen` through
+`PUT /api/v1/online_notifications/{id}`.
+
+The endpoint accepted every attribute of the notification in its payload, including `o_id`,
+`object`, `type` and `user_id`. It now applies `seen` only. Other attributes in the payload are
+ignored, and the response still answers `200` with the record, so such an integration gets a success
+response while nothing but `seen` changes.
+
+⚠️ Send only `seen` to this endpoint. Where a notification points and whom it belongs to is decided
+by the server when the notification is created.
+
+**Related advisory:** [GHSA-w4xf-rp7v-r2j2](https://github.com/zammad/zammad/security/advisories/GHSA-w4xf-rp7v-r2j2)
+
 ### Verifying a signup email address no longer signs the user in
 
 **Who is affected?** Integrations that redeem a signup verification token through
@@ -87,10 +273,15 @@ address as verified and establish no session. The REST endpoint still answers
 mutation's payload field `session` was replaced by a boolean `success`, so a client selecting
 `session { id }` receives a GraphQL error.
 
+The resend endpoints `POST /api/v1/users/email_verify_send` and the `userSignupResend` mutation now
+refuse to mint a token for an inactive account. They keep answering positively, so that the existence
+of an account is not leaked, but no mail is sent. `POST /api/v1/users/password_reset` has always
+behaved this way.
+
 A non-persistent token — `Signup`, `PasswordReset`, `AdminAuth`, `KnowledgeBasePreview` — is now
 rejected when it belongs to an inactive user. Previously only persistent tokens were checked this
-way. The mail carrying such a link is still sent, but the link itself no longer works while the
-account is deactivated.
+way, so a link minted before the account was deactivated no longer works — a self-signup account
+that is deactivated before the user clicks the link is now refused where it was verified before.
 
 ⚠️ Sign in through `POST /api/v1/signin` or the `login` mutation after redeeming a verification
 token, and pass the configured second factor there. Change GraphQL clients to select `success`
@@ -98,6 +289,8 @@ instead of `session`. Activate a deactivated account before sending it a verific
 reset link.
 
 **Related advisory:** [GHSA-f3qr-94c2-7mx2](https://github.com/zammad/zammad/security/advisories/GHSA-f3qr-94c2-7mx2)
+
+**Related issue:** [#6431](https://github.com/zammad/zammad/issues/6431)
 
 ### The getting started endpoints require `admin.wizard` once the system is set up
 

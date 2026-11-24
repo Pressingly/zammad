@@ -316,6 +316,145 @@ RSpec.describe SecureMailing::SMIME do
         end
       end
 
+      # The encapsulated content of an opaque signature is parsed and shown even for an unknown
+      # signer; X-Zammad headers are not taken from that content.
+      context 'opaque signature with X-Zammad headers in the content' do
+        let(:mail) do
+          signer_key  = OpenSSL::PKey::RSA.new(2048)
+          signer_cert = OpenSSL::X509::Certificate.new
+          signer_cert.version    = 2
+          signer_cert.serial     = 1
+          signer_cert.subject    = OpenSSL::X509::Name.parse("/CN=example.com/emailAddress=#{sender_email_address}")
+          signer_cert.issuer     = signer_cert.subject
+          signer_cert.public_key = signer_key.public_key
+          signer_cert.not_before = Time.zone.now
+          signer_cert.not_after  = 1.hour.from_now
+          signer_cert.sign(signer_key, OpenSSL::Digest.new('SHA256'))
+
+          # The signed content is a MIME entity that also carries X-Zammad headers.
+          signed_content = <<~SIGNED.gsub(%r{\n}, "\r\n")
+            Content-Type: text/plain
+            X-Zammad-Ticket-Id: 99999
+            X-Zammad-Session-User-Id: 1
+            X-Zammad-Ticket-Followup-Customer: customer@example.com
+            X-Zammad-Article-Internal: true
+
+            Secured opaque body
+          SIGNED
+
+          # Flag 0 (no DETACHED) produces an opaque signature with the content embedded.
+          p7         = OpenSSL::PKCS7.sign(signer_cert, signer_key, signed_content, [], 0)
+          smime_body = OpenSSL::PKCS7.write_smime(p7)
+          smime_mail = "From: #{sender_email_address}\r\nTo: #{recipient_email_address}\r\nSubject: test\r\n#{smime_body}"
+
+          mail = Channel::EmailParser.new.parse(smime_mail)
+          SecureMailing.incoming(mail)
+
+          mail
+        end
+
+        it 'shows the content but does not adopt its X-Zammad headers' do
+          expect(mail[:body]).to include('Secured opaque body')
+          expect(mail['x-zammad-article-preferences'][:security][:sign][:success]).to be false
+          expect(mail[:'x-zammad-ticket-id']).to be_nil
+          expect(mail[:'x-zammad-session-user-id']).to be_nil
+          expect(mail[:'x-zammad-ticket-followup-customer']).to be_nil
+          expect(mail[:'x-zammad-article-internal']).to be_nil
+          # The `raw-*` header twins are not adopted either.
+          expect(mail['raw-x-zammad-ticket-id']).to be_nil
+        end
+      end
+
+      # Sender and routing headers are kept from the original mail, while the subject is still
+      # taken from the content (RFC 8551 protected headers).
+      context 'opaque signature with sender and routing headers in the content' do
+        let(:mail) do
+          signer_key  = OpenSSL::PKey::RSA.new(2048)
+          signer_cert = OpenSSL::X509::Certificate.new
+          signer_cert.version    = 2
+          signer_cert.serial     = 1
+          signer_cert.subject    = OpenSSL::X509::Name.parse("/CN=example.com/emailAddress=#{sender_email_address}")
+          signer_cert.issuer     = signer_cert.subject
+          signer_cert.public_key = signer_key.public_key
+          signer_cert.not_before = Time.zone.now
+          signer_cert.not_after  = 1.hour.from_now
+          signer_cert.sign(signer_key, OpenSSL::Digest.new('SHA256'))
+
+          signed_content = <<~SIGNED.gsub(%r{\n}, "\r\n")
+            Content-Type: text/plain
+            From: inner@example.com
+            Reply-To: inner@example.com
+            To: other-group@example.com
+            References: <inner-thread@example.com>
+            Message-ID: <inner-msgid@example.com>
+            Subject: protected inner subject
+
+            Secured opaque body
+          SIGNED
+
+          p7         = OpenSSL::PKCS7.sign(signer_cert, signer_key, signed_content, [], 0)
+          smime_body = OpenSSL::PKCS7.write_smime(p7)
+          smime_mail = "From: #{sender_email_address}\r\nTo: #{recipient_email_address}\r\nSubject: outer subject\r\n#{smime_body}"
+
+          mail = Channel::EmailParser.new.parse(smime_mail)
+          SecureMailing.incoming(mail)
+
+          mail
+        end
+
+        it 'keeps the outer sender and routing but still adopts the protected subject' do
+          expect(mail[:body]).to include('Secured opaque body')
+          # Sender / routing identity is kept from the original mail.
+          expect(mail[:from]).to eq(sender_email_address)
+          expect(mail[:from_email]).to eq(sender_email_address)
+          expect(mail[:'reply-to']).to be_nil
+          expect(mail[:to]).to eq(recipient_email_address)
+          # Threading identity (used to select/link tickets) is not taken from the content.
+          expect(mail[:references]).to be_nil
+          expect(mail[:message_id]).not_to include('inner-msgid')
+          # The encrypted Subject is a protected header and is still adopted.
+          expect(mail[:subject]).to eq('protected inner subject')
+        end
+      end
+
+      # A case-variant X-Zammad name and its raw- twin are not adopted either.
+      context 'opaque signature with a case-variant X-Zammad header' do
+        let(:mail) do
+          signer_key  = OpenSSL::PKey::RSA.new(2048)
+          signer_cert = OpenSSL::X509::Certificate.new
+          signer_cert.version    = 2
+          signer_cert.serial     = 1
+          signer_cert.subject    = OpenSSL::X509::Name.parse("/CN=example.com/emailAddress=#{sender_email_address}")
+          signer_cert.issuer     = signer_cert.subject
+          signer_cert.public_key = signer_key.public_key
+          signer_cert.not_before = Time.zone.now
+          signer_cert.not_after  = 1.hour.from_now
+          signer_cert.sign(signer_key, OpenSSL::Digest.new('SHA256'))
+
+          signed_content = <<~SIGNED.gsub(%r{\n}, "\r\n")
+            Content-Type: text/plain
+            X-ZaMmAd-Ticket-Id: 88888
+
+            Secured opaque body
+          SIGNED
+
+          p7         = OpenSSL::PKCS7.sign(signer_cert, signer_key, signed_content, [], 0)
+          smime_body = OpenSSL::PKCS7.write_smime(p7)
+          smime_mail = "From: #{sender_email_address}\r\nTo: #{recipient_email_address}\r\nSubject: test\r\n#{smime_body}"
+
+          mail = Channel::EmailParser.new.parse(smime_mail)
+          SecureMailing.incoming(mail)
+
+          mail
+        end
+
+        it 'does not adopt case-variant or raw- X-Zammad headers' do
+          expect(mail[:body]).to include('Secured opaque body')
+          expect(mail[:'x-zammad-ticket-id']).to be_nil
+          expect(mail['raw-x-zammad-ticket-id']).to be_nil
+        end
+      end
+
       context 'opaque signature mislabelled as signed-data but actually encrypted' do
         before do
           create(:smime_certificate, fixture: recipient_email_address)
@@ -488,6 +627,41 @@ RSpec.describe SecureMailing::SMIME do
           end
 
           it 'verifies with comment' do
+            expect(mail['x-zammad-article-preferences'][:security][:sign][:success]).to be false
+            expect(mail['x-zammad-article-preferences'][:security][:sign][:comment]).to eq('This message was not signed by its sender.')
+            expect(mail['x-zammad-article-preferences'][:security][:encryption][:success]).to be false
+            expect(mail['x-zammad-article-preferences'][:security][:encryption][:comment]).to be_nil
+          end
+        end
+
+        # The sender comparison uses the envelope From, which is also what the article is
+        # attributed to, and not the From of the re-parsed content.
+        context 'opaque signature with a From header in the content' do
+          let(:mail) do
+            signer_key  = OpenSSL::PKey::RSA.new(Rails.root.join("spec/fixtures/files/smime/#{sender_email_address}.key").read,
+                                                 Rails.root.join("spec/fixtures/files/smime/#{sender_email_address}.secret").read.strip)
+            signer_cert = OpenSSL::X509::Certificate.new(Rails.root.join("spec/fixtures/files/smime/#{sender_email_address}.crt").read)
+
+            signed_content = <<~SIGNED.gsub(%r{\n}, "\r\n")
+              Content-Type: text/plain
+              From: #{sender_email_address}
+              Subject: protected inner subject
+
+              #{raw_body}
+            SIGNED
+
+            p7         = OpenSSL::PKCS7.sign(signer_cert, signer_key, signed_content, [], 0)
+            smime_body = OpenSSL::PKCS7.write_smime(p7)
+            smime_mail = "From: #{cc_customer_email_address}\r\nTo: #{recipient_email_address}\r\nSubject: outer subject\r\n#{smime_body}"
+
+            mail = Channel::EmailParser.new.parse(smime_mail)
+            SecureMailing.incoming(mail)
+
+            mail
+          end
+
+          it 'compares the signer against the envelope sender' do
+            expect(mail[:from]).to eq(cc_customer_email_address)
             expect(mail['x-zammad-article-preferences'][:security][:sign][:success]).to be false
             expect(mail['x-zammad-article-preferences'][:security][:sign][:comment]).to eq('This message was not signed by its sender.')
             expect(mail['x-zammad-article-preferences'][:security][:encryption][:success]).to be false
@@ -919,6 +1093,88 @@ RSpec.describe SecureMailing::SMIME do
       let!(:sender_certificate)       { create(:smime_certificate, :with_private, fixture: sender_email_address) }
       let!(:recipient_certificate)    { create(:smime_certificate, :with_private, fixture: recipient_email_address) }
       let!(:cc_recipient_certificate) { create(:smime_certificate, :with_private, fixture: cc_recipient_email_address) }
+
+      # X-Zammad headers are not taken from decrypted content.
+      context 'enveloped message with X-Zammad headers in the content' do
+        let(:mail) do
+          recipient_cert = OpenSSL::X509::Certificate.new(Rails.root.join("spec/fixtures/files/smime/#{recipient_email_address}.crt").read)
+
+          # The encrypted content is a MIME entity that also carries X-Zammad headers.
+          inner = <<~INNER.gsub(%r{\n}, "\r\n")
+            Content-Type: text/plain
+            X-Zammad-Ticket-Id: 99999
+            X-Zammad-Session-User-Id: 1
+            X-Zammad-Ticket-Followup-Customer: customer@example.com
+            X-Zammad-Article-Internal: true
+
+            Secured enveloped body
+          INNER
+
+          p7         = OpenSSL::PKCS7.encrypt([recipient_cert], inner, OpenSSL::Cipher.new('AES-128-CBC'))
+          smime_body = OpenSSL::PKCS7.write_smime(p7)
+          smime_mail = "From: #{sender_email_address}\r\nTo: #{recipient_email_address}\r\nSubject: test\r\n#{smime_body}"
+
+          mail = Channel::EmailParser.new.parse(smime_mail)
+          SecureMailing.incoming(mail)
+
+          mail
+        end
+
+        it 'decrypts and shows the content but does not adopt its X-Zammad headers' do
+          expect(mail[:body]).to include('Secured enveloped body')
+          expect(mail['x-zammad-article-preferences'][:security][:encryption][:success]).to be true
+          expect(mail[:'x-zammad-ticket-id']).to be_nil
+          expect(mail[:'x-zammad-session-user-id']).to be_nil
+          expect(mail[:'x-zammad-ticket-followup-customer']).to be_nil
+          expect(mail[:'x-zammad-article-internal']).to be_nil
+          # The `raw-*` header twins are not adopted either.
+          expect(mail['raw-x-zammad-ticket-id']).to be_nil
+        end
+      end
+
+      # Sender and routing headers are kept from the original mail, while the subject is still
+      # taken from the content (RFC 8551 protected headers).
+      context 'enveloped message with sender and routing headers in the content' do
+        let(:mail) do
+          recipient_cert = OpenSSL::X509::Certificate.new(Rails.root.join("spec/fixtures/files/smime/#{recipient_email_address}.crt").read)
+
+          inner = <<~INNER.gsub(%r{\n}, "\r\n")
+            Content-Type: text/plain
+            From: inner@example.com
+            Reply-To: inner@example.com
+            To: other-group@example.com
+            References: <inner-thread@example.com>
+            Message-ID: <inner-msgid@example.com>
+            Subject: protected inner subject
+
+            Secured enveloped body
+          INNER
+
+          p7         = OpenSSL::PKCS7.encrypt([recipient_cert], inner, OpenSSL::Cipher.new('AES-128-CBC'))
+          smime_body = OpenSSL::PKCS7.write_smime(p7)
+          smime_mail = "From: #{sender_email_address}\r\nTo: #{recipient_email_address}\r\nSubject: outer subject\r\n#{smime_body}"
+
+          mail = Channel::EmailParser.new.parse(smime_mail)
+          SecureMailing.incoming(mail)
+
+          mail
+        end
+
+        it 'keeps the outer sender and routing but still adopts the protected subject' do
+          expect(mail[:body]).to include('Secured enveloped body')
+          expect(mail['x-zammad-article-preferences'][:security][:encryption][:success]).to be true
+          # Sender / routing identity is kept from the original mail.
+          expect(mail[:from]).to eq(sender_email_address)
+          expect(mail[:from_email]).to eq(sender_email_address)
+          expect(mail[:'reply-to']).to be_nil
+          expect(mail[:to]).to eq(recipient_email_address)
+          # Threading identity (used to select/link tickets) is not taken from the content.
+          expect(mail[:references]).to be_nil
+          expect(mail[:message_id]).not_to include('inner-msgid')
+          # The encrypted Subject is a protected header and is still adopted.
+          expect(mail[:subject]).to eq('protected inner subject')
+        end
+      end
 
       context 'private key present' do
 

@@ -1376,6 +1376,13 @@ RSpec.describe 'User', performs_jobs: true, type: :request do
       expect(response).to have_http_status(:unprocessable_content)
     end
 
+    it 'does not allow to create an administrator account while an import is running' do
+      Setting.set('import_mode', true)
+      make_request successful_params
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(User.find_by(email: successful_params[:email])).to be_nil
+    end
+
     it 'requires email' do
       make_request successful_params.merge(email: nil)
       expect(response).to have_http_status(:unprocessable_content)
@@ -1793,6 +1800,24 @@ RSpec.describe 'User', performs_jobs: true, type: :request do
         let(:search_ids) { search_agents.last(2).map(&:id) }
 
         include_examples 'result check'
+      end
+
+      shared_examples 'unrestricted result check' do
+        it 'returns all agents matching the query' do
+          expect(json_response.pluck('id')).to eq(search_agents.map(&:id))
+        end
+      end
+
+      context 'when ids is a blank string' do
+        let(:search_ids) { '' }
+
+        include_examples 'unrestricted result check'
+      end
+
+      context 'when ids is an empty list' do
+        let(:search_ids) { [] }
+
+        include_examples 'unrestricted result check'
       end
     end
 
