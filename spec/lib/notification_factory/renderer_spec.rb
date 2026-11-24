@@ -722,6 +722,55 @@ RSpec.describe NotificationFactory::Renderer do
           template = "some \#{ config.fqdn} and \#{\tconfig.product_name}"
           expect(render_result(template: template, objects: { ticket: ticket })).to eq("some #{Setting.get('fqdn')} and #{Setting.get('product_name')}")
         end
+
+        it 'renders a setting that is not sent to the frontend as a missing object' do
+          expect(render_result(template: '#{config.postmaster_max_size}', objects: {})).to eq('#{config.postmaster_max_size / no such object}')
+        end
+
+        it 'does not render the application secret' do
+          expect(render_result(template: '#{config.application_secret}', objects: {})).not_to include(Setting.get('application_secret'))
+        end
+
+        it 'does not render a setting the ticket hook divider refers to' do
+          Setting.set('ticket_hook_divider', '#{config.application_secret}')
+
+          expect(render_result(template: '#{config.ticket_hook_divider}', objects: {})).not_to include(Setting.get('application_secret'))
+        end
+
+        it 'renders the ticket hook divider, which is not sent to the frontend' do
+          Setting.set('ticket_hook_divider', '-')
+
+          expect(render_result(template: '#{config.ticket_hook}#{config.ticket_hook_divider}#{ticket.number}', objects: { ticket: ticket }))
+            .to eq("#{Setting.get('ticket_hook')}-#{ticket.number}")
+        end
+
+        it 'renders the notification sender, which is not sent to the frontend' do
+          renderer = build(:notification_factory_renderer, objects: {}, template: '#{config.notification_sender}', escape: false)
+
+          expect(renderer.render).to eq(Setting.get('notification_sender'))
+        end
+
+        it 'renders an unknown setting as an empty string' do
+          expect(render_result(template: 'a#{config.does_not_exist}b', objects: {})).to eq('ab')
+        end
+
+        it 'keeps the placeholder of a setting that is not readable when missing objects are ignored' do
+          renderer = build(:notification_factory_renderer, objects: {}, template: '#{config.postmaster_max_size}', ignore_missing_objects: true)
+
+          expect(renderer.render).to eq('#{config.postmaster_max_size}')
+        end
+
+        it 'renders a setting that is not sent to the frontend as a missing object in a trusted template' do
+          renderer = build(:notification_factory_renderer, objects: {}, template: '#{config.postmaster_max_size}', trusted: true)
+
+          expect(renderer.render).to eq('#{config.postmaster_max_size / no such object}')
+        end
+
+        it 'renders a setting that is not sent to the frontend when every setting may be read' do
+          renderer = build(:notification_factory_renderer, objects: {}, template: '#{config.postmaster_max_size}', read_all_settings: true, escape: false)
+
+          expect(renderer.render).to eq(Setting.get('postmaster_max_size').to_s)
+        end
       end
 
       context 'with translations' do
@@ -895,6 +944,122 @@ RSpec.describe NotificationFactory::Renderer do
     end
   end
 
+  context 'with objects a template written in the admin interface may reach' do
+    let(:channel) do
+      create(:email_channel, inbound: { 'adapter' => 'imap', 'options' => { 'host' => 'imap.example.com', 'user' => 'user', 'password' => 'imap-secret' } })
+    end
+    let(:email_address) { create(:email_address, channel:) }
+    let(:group)         { create(:group, email_address:) }
+    let(:organization)  { create(:organization, name: 'Zammad') }
+    let(:customer)      { create(:customer, organization:, firstname: 'Nicole') }
+    let(:owner)         { create(:agent, groups: [group], firstname: 'Anna') }
+    let(:ticket)        { create(:ticket, title: 'Setting', group:, customer:, owner:) }
+
+    def render(template, objects = { ticket: ticket }, **)
+      build(:notification_factory_renderer, template:, objects:, escape: false, **).render
+    end
+
+    describe 'closed routes' do
+      it 'does not step from a record to its class' do
+        template = "\#{ticket.class.superclass.descendants.fetch(#{ApplicationModel.descendants.index(Setting)}).offset(0).first.state_current}"
+
+        expect(render(template)).to eq("\#{ticket.class / not allowed}")
+      end
+
+      it 'does not render a setting through the class of a record' do
+        index  = ApplicationModel.descendants.index(Setting)
+        offset = Setting.reorder(:id).pluck(:name).index('application_secret')
+
+        expect(render("\#{ticket.class.superclass.descendants.fetch(#{index}).offset(#{offset}).first.state_current}"))
+          .not_to include(Setting.get('application_secret'))
+      end
+
+      it 'does not step into the channel of the group email address' do
+        expect(render("\#{ticket.group.email_address.channel.options}")).to eq("\#{ticket.group.email_address / not allowed}")
+      end
+
+      it 'does not step into the tokens of a user' do
+        token = create(:token, user: owner)
+
+        expect(render("\#{ticket.owner.tokens.first.token}")).to eq("\#{ticket.owner.tokens / not allowed}").and(not_include(token.token))
+      end
+
+      it 'does not render the password of a user' do
+        expect(render("\#{ticket.owner.password}")).to eq("\#{ticket.owner.password / not allowed}")
+      end
+
+      it 'does not turn a string into a constant' do
+        expect(render("\#{ticket.title.constantize.first.state_current}")).to eq("\#{ticket.title.constantize / not allowed}")
+      end
+
+      it 'does not call an undocumented method on a value' do
+        expect(render("\#{ticket.title.reverse}")).to eq("\#{ticket.title.reverse / not allowed}")
+      end
+
+      it 'does not walk a relation' do
+        expect(render("\#{ticket.customer.organization.members.offset(1)}")).to eq("\#{ticket.customer.organization.members.offset(1) / not allowed}")
+      end
+
+      it 'renders a dash instead when errors are hidden' do
+        renderer = build(:notification_factory_renderer, template: "\#{ticket.class}", objects: { ticket: })
+
+        expect(renderer.render(debug_errors: false)).to eq('-')
+      end
+
+      it 'does not step from the enrichment data of an AI agent to its class' do
+        objects = { type_enrichment_data: Struct.new(:instruction).new('text') }
+
+        expect(render("\#{type_enrichment_data.instruction} \#{type_enrichment_data.class}", objects)).to eq("text \#{type_enrichment_data.class / not allowed}")
+      end
+
+      it 'does not step from the external data source search to its options' do
+        objects = { search: ExternalDataSource.new(options: {}, term: 'abc', render_context: {}) }
+
+        expect(render("\#{search.term} \#{search.options}", objects)).to eq("abc \#{search.options / not allowed}")
+      end
+
+      it 'does not reach an object outside the list' do
+        token = create(:token, user: owner)
+
+        expect(render("\#{token.token}", { token: })).to eq("\#{token.token / not allowed}")
+      end
+    end
+
+    describe 'file templates' do
+      it 'reach any object' do
+        token = create(:token, user: owner)
+
+        expect(render("\#{token.token}", { token: }, read_all_objects: true)).to eq(token.token)
+      end
+    end
+
+    describe 'kept chains' do
+      {
+        'ticket.title'                                         => -> { 'Setting' },
+        'ticket.customer.organization.name'                    => -> { 'Zammad' },
+        'ticket.customer.organization.members.first.firstname' => -> { 'Nicole' },
+        'ticket.articles.count'                                => -> { '0' },
+        'ticket.owner.firstname.downcase'                      => -> { 'anna' },
+        'ticket.pending_time.to_s'                             => -> { '' },
+        'ticket.group.name'                                    => -> { group.fullname },
+        'ticket.owner.fullname'                                => -> { owner.fullname },
+        'ticket.tags'                                          => -> { '' },
+      }.each do |chain, expected|
+        it "renders #{chain}" do
+          expect(render("\#{#{chain}}")).to eq(instance_exec(&expected))
+        end
+      end
+
+      it 'renders the year of the creation time' do
+        expect(render("\#{ticket.created_at.to_s.first(4)}")).to eq(ticket.created_at.year.to_s)
+      end
+
+      it 'renders the state color' do
+        expect(render("\#{ticket.current_state_color}")).to eq(ticket.current_state_color)
+      end
+    end
+  end
+
   context 'with user avatar' do
     let(:base64_img)  { 'iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg==' }
     let(:decoded_img) { Base64.decode64(base64_img) }
@@ -931,6 +1096,12 @@ RSpec.describe NotificationFactory::Renderer do
         renderer = build(:notification_factory_renderer, template: 'Avatar test #{ticket.owner.avatar(150, 150)}', objects: { ticket: ticket }, trusted: true) # rubocop:disable Lint/InterpolationCheck
 
         expect(renderer.render).to eq "Avatar test <img src='data:#{mime_type};base64,#{base64_img}' width='150' height='150' />"
+      end
+
+      it 'passes width and height separately' do
+        renderer = build(:notification_factory_renderer, template: 'Avatar test #{ticket.owner.avatar(150, 80)}', objects: { ticket: ticket }, trusted: true) # rubocop:disable Lint/InterpolationCheck
+
+        expect(renderer.render).to eq "Avatar test <img src='data:#{mime_type};base64,#{base64_img}' width='150' height='80' />"
       end
     end
 

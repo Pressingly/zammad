@@ -8,8 +8,10 @@ FactoryBot.define do
     escape   { true }
     url_encode { false }
     trusted { false }
+    read_all_settings { false }
+    read_all_objects { false }
     ignore_missing_objects { false }
 
-    initialize_with { new(objects:, locale:, template:, escape:, url_encode:, trusted:, ignore_missing_objects:) }
+    initialize_with { new(objects:, locale:, template:, escape:, url_encode:, trusted:, read_all_settings:, read_all_objects:, ignore_missing_objects:) }
   end
 end

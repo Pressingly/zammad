@@ -38,8 +38,9 @@ see e.g. also app/models/ticket/search.rb
 
     # Scope to specific IDs if they're given in params.
     # Usually those IDs are pre-filled in .search_params_pre method.
+    # An empty list restricts to nothing, only a missing one means no restriction.
     scope :search_sql_ids, lambda { |params|
-      where(id: params[:ids]) if params[:ids].present?
+      where(id: params[:ids]) if !params[:ids].nil?
     }
   end
 
@@ -90,6 +91,21 @@ see e.g. also app/models/user/search.rb
 =end
 
     def search_query_extension(params)
+      # optional
+    end
+
+=begin
+
+This function provides the possibility to replace the fulltext condition
+for the searches in the elasticsearch. E.g. to search different fields
+depending on the access of the current user. Returning nil keeps the
+default condition of the search index backend.
+
+see e.g. also app/models/ticket/search.rb
+
+=end
+
+    def search_query_condition(params)
       # optional
     end
 
@@ -194,6 +210,9 @@ returns
 
       params = search_build_params(params)
 
+      # An empty ids list matches nothing on either backend, so no round trip is needed.
+      return search_result(params, [], 0) if params[:ids] == []
+
       # try search index backend
       # we only search in elastic search when we have a query present or if search_by_index is explicitly set to true
       # else we try to use the database result, since it is more up to date
@@ -250,7 +269,7 @@ returns
       result = SearchIndexBackend.search_by_index(
         params[:query],
         to_s,
-        params.merge(query_extension: search_query_extension(params), with_total_count: true)
+        params.merge(query_extension: search_query_extension(params), query_condition: search_query_condition(params), with_total_count: true)
       )
 
       if params[:only_total_count].blank?

@@ -695,6 +695,38 @@ RSpec.describe 'Ticket zoom', type: :system do
       click '.user-tickets[data-type=closed]'
       expect(page).to have_text(ticket_closed.title)
     end
+
+    it 'keeps the ticket list closed when it loads after the pointer left' do
+      response_gate = Queue.new
+      request_entered = Queue.new
+
+      allow_any_instance_of(TicketsController).to receive(:ticket_customer).and_wrap_original do |method, *args|
+        request_entered << true
+        response_gate.pop(timeout: 10)
+        method.call(*args)
+      end
+
+      visit "#ticket/zoom/#{ticket_open.id}"
+      click '.tabsSidebar-tab[data-tab=customer]'
+
+      find('.user-tickets[data-type=open]') do |elem|
+        elem.evaluate_script('Object.keys($(this).data()).includes("bs.popover")')
+      end.hover
+
+      expect(page).to have_css('.popover')
+      request_entered.pop(timeout: 10)
+
+      find('.menu').hover
+
+      expect(page).to have_no_css('.popover')
+
+      response_gate.close
+      wait.until { page.evaluate_script('$.active').zero? }
+
+      expect(page).to have_no_css('.popover', wait: 0)
+    ensure
+      response_gate&.close
+    end
   end
 
   context 'Sidebar - Organization' do
@@ -1165,8 +1197,37 @@ RSpec.describe 'Ticket zoom', type: :system do
     end
   end
 
+  describe 'Ticket state resets to the first dropdown option when the sidebar renders with stale Core Workflow data #3880', authenticated_as: :authenticate do
+    let(:ticket) { create(:ticket, group: Group.find_by(name: 'Users'), state: Ticket::State.find_by(name: 'open')) }
+
+    def authenticate
+      ticket
+      true
+    end
+
+    before do
+      visit "#ticket/zoom/#{ticket.id}"
+    end
+
+    it 'keeps the saved ticket state when discarding changes' do
+      expect(page).to have_select('state_id', selected: 'open')
+
+      page.select '3 high', from: 'priority_id'
+      expect(page).to have_css('.js-reset:not(.hide)')
+
+      # Simulate a concurrent update (e.g. by a trigger) to a state outside of the
+      # agent edit filter, which reaches the client before the sidebar received
+      # new Core Workflow data for it.
+      Ticket.where(id: ticket.id).update_all(state_id: Ticket::State.find_by(name: 'new').id, updated_at: Time.current)
+      page.execute_script("App.Collection.loadAssets(#{ticket.reload.assets({}).to_json}); $('.js-reset').trigger('click')")
+
+      expect(page).to have_select('state_id', selected: 'new')
+      expect(page).to have_no_css('.sidebar[data-tab="ticket"] .form-group.is-changed')
+    end
+  end
+
   describe 'Show which escalation type escalated in ticket zoom #3928', authenticated_as: :authenticate do
-    let(:sla) { create(:sla, first_response_time: 1, update_time: 1, solution_time: 1) }
+    let(:sla)    { create(:sla, first_response_time: 1, update_time: 1, solution_time: 1) }
     let(:ticket) { create(:ticket, group: Group.find_by(name: 'Users')) }
 
     def authenticate

@@ -7,6 +7,10 @@ class NotificationFactory::Renderer
     created_article created_internal_article created_external_article
   ].freeze
 
+  def read_all_settings? = @read_all_settings
+  def read_all_objects? = @read_all_objects
+  def ignore_missing_objects? = @ignore_missing_objects
+
 =begin
 
 examples how to use
@@ -21,6 +25,8 @@ examples how to use
       escape: false,      # Perform HTML encoding on replaced values
       url_encode: false, # Perform URI encoding on replaced values
       trusted: false,     # Allow ERB tags in the template?
+      read_all_settings: false, # Resolve #{config.*} for every setting, not only those sent to the frontend?
+      read_all_objects: false, # Call any method on any object, not only what ObjectAccess allows?
     ).render
 
     message_body = NotificationFactory::Renderer.new(
@@ -34,7 +40,7 @@ examples how to use
 
 =end
 
-  def initialize(objects:, template:, locale: nil, timezone: nil, escape: true, url_encode: false, trusted: false, ignore_missing_objects: false, trim_mode: nil)
+  def initialize(objects:, template:, locale: nil, timezone: nil, escape: true, url_encode: false, trusted: false, read_all_settings: false, read_all_objects: false, ignore_missing_objects: false, trim_mode: nil)
     @objects  = objects
     @locale   = locale || Locale.default
     @timezone = timezone || Setting.get('timezone_default')
@@ -42,6 +48,8 @@ examples how to use
     @escape = escape
     @url_encode = url_encode
     @trusted = trusted
+    @read_all_settings = read_all_settings
+    @read_all_objects = read_all_objects
     @ignore_missing_objects = ignore_missing_objects
     @trim_mode = trim_mode
   end
@@ -95,11 +103,7 @@ examples how to use
     object_refs = @objects[object_name] || @objects[object_name.to_sym]
 
     # if object is not in available objects, just return
-    if !object_refs
-      return "\#{#{key}}" if @ignore_missing_objects
-
-      return debug("\#{#{object_name} / no such object}")
-    end
+    return missing_object(key, object_name) if !object_refs
 
     # if content of method is a complex datatype, just return
     if object_methods.blank? && object_refs.class != String && object_refs.class != Float && object_refs.class != Integer
@@ -119,7 +123,7 @@ examples how to use
         temp = object_refs
         object_refs = display_value(previous_object_refs, method, object_methods_s, object_refs)
         previous_object_refs = temp
-      elsif index == object_methods.length - 1 && (is_textarea_attribute = textarea_attributes(object_refs).include?(method))
+      elsif index == object_methods.length - 1 && (is_textarea_attribute = textarea_attributes(object_refs).include?(method) && !object_withheld?(object_refs, method))
         temp = object_refs
         object_refs = object_refs.send(method.to_sym)&.text2html
         previous_object_refs = temp
@@ -150,7 +154,7 @@ examples how to use
             break
           end
 
-          parameters << parameter.to_i
+          parameters << p.to_i
         end
 
         # Ensure that e.g. 'ticket.title.slice(3,4)' is not allowed, but 'ticket.owner.avatar(150,150)' is
@@ -171,6 +175,11 @@ examples how to use
       # if method exists
       if !object_refs.respond_to?(method.to_sym) && method_whitelist.exclude?(method)
         value = debug("\#{#{object_name}.#{object_methods_s} / no such method}")
+        break
+      end
+
+      if object_withheld?(object_refs, method)
+        value = debug("\#{#{object_name}.#{object_methods_s} / not allowed}")
         break
       end
 
@@ -204,8 +213,9 @@ examples how to use
   # c - config
   # c('fqdn', htmlEscape)
   def c(key, escape = nil)
-    config = Setting.get(key)
-    escaping(config, escape)
+    return missing_object("config.#{key}") if config_withheld?(key)
+
+    escaping(Setting.get(key), escape)
   end
 
   # t - translation
@@ -247,6 +257,22 @@ examples how to use
   end
 
   private
+
+  # Only a setting that exists but templates may not read is withheld; an unknown name renders
+  # empty, as it always did.
+  def config_withheld?(key)
+    !read_all_settings? && Setting.known?(key) && !Setting.template_readable?(key)
+  end
+
+  def object_withheld?(object, method)
+    !read_all_objects? && !ObjectAccess.allows?(object, method)
+  end
+
+  def missing_object(placeholder, name = placeholder)
+    return "\#{#{placeholder}}" if ignore_missing_objects?
+
+    debug("\#{#{name} / no such object}")
+  end
 
   def template_binding
     TemplateContext.new(self, @objects).safe_binding

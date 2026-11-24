@@ -396,24 +396,7 @@ remove whole data from index
     return if url.blank?
 
     # real search condition
-    condition = if query.blank?
-                  {
-                    match_all: {},
-                  }
-                else
-                  {
-                    'query_string' => {
-                      'query'            => append_wildcard_to_simple_query(query),
-                      'time_zone'        => Setting.get('timezone_default'),
-                      'default_operator' => 'AND',
-                      'analyze_wildcard' => true,
-                    }
-                  }
-                end
-
-    if query.present? && (fields = options.dig(:query_fields_by_indexes, index.to_sym))
-      condition['query_string']['fields'] = fields
-    end
+    condition = options[:query_condition] || build_query_condition(query, index, options)
 
     query_data = build_query(index, condition, options)
 
@@ -481,6 +464,37 @@ remove whole data from index
     end
 
     data
+  end
+
+=begin
+
+builds the default fulltext condition of a search, which callers may replace via the :query_condition option of search_by_index
+
+@param query   [String] search query
+@param index   [String] index name
+@param options [Hash] search options (see build_query)
+
+  condition = SearchIndexBackend.build_query_condition('Nicole', 'User')
+
+=end
+
+  def self.build_query_condition(query, index, options = {})
+    return { match_all: {} } if query.blank?
+
+    condition = {
+      'query_string' => {
+        'query'            => append_wildcard_to_simple_query(query),
+        'time_zone'        => Setting.get('timezone_default'),
+        'default_operator' => 'AND',
+        'analyze_wildcard' => true,
+      }
+    }
+
+    if (fields = options.dig(:query_fields_by_indexes, index.to_sym))
+      condition['query_string']['fields'] = fields
+    end
+
+    condition
   end
 
   def self.search_by_index_sort(index:, sort_by: nil, order_by: nil, fulltext: false)
@@ -753,6 +767,7 @@ generate url for index or document access (only for internal use)
 @option options [Integer] :from
 @option options [Integer] :limit
 @option options [Hash] :query_extension applied to ElasticSearch query
+@option options [Hash] :query_condition fulltext condition used instead of the default one (see build_query_condition)
 @option options [Array<String>] :order_by ordering directions, desc or asc
 @option options [Array<String>] :sort_by fields to sort by
 @option options [Array<String>] :fulltext If no sorting is defined the current fallback is the sorting by updated_at. But for fulltext searches it makes more sense to search by _score as default. This parameter allows to change to the fallback to _score.
@@ -766,7 +781,13 @@ generate url for index or document access (only for internal use)
 
   def self.build_query(index, condition, options = {})
     options[:from] = options[:from].presence || options[:offset].presence
-    options        = DEFAULT_QUERY_OPTIONS.merge(options.compact_blank.deep_symbolize_keys)
+    options        = options.deep_symbolize_keys
+
+    # An empty list restricts to nothing, only a missing one means no restriction,
+    # so it has to survive the compaction below.
+    ids = options[:ids]
+
+    options = DEFAULT_QUERY_OPTIONS.merge(options.compact_blank)
 
     data = {
       from:  options[:from],
@@ -786,8 +807,8 @@ generate url for index or document access (only for internal use)
 
     data[:query][:bool][:must].push condition
 
-    if options[:ids].present?
-      data[:query][:bool][:must].push({ ids: { values: options[:ids] } })
+    if !ids.nil?
+      data[:query][:bool][:must].push({ ids: { values: ids } })
     end
 
     if options[:condition].present?
